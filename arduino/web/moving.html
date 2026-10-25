@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motor Moving</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<main>
+  <section class="card moving">
+    <div class="arrow {{DIR}}">&#9650;</div>
+    <h1>Moving {{DIR}}</h1>
+    <p class="remaining"><span id="left"></span> s remaining</p>
+    <div class="bar {{DIR}}"><div id="fill"></div></div>
+    <a class="btn stop" href="/cancel">&#9632; Stop</a>
+    <p class="offline">Not connected to the controller</p>
+    <p class="note">
+      You can also stop it with the cancel button on the remote or either switch button.
+    </p>
+  </section>
+</main>
+<script>
+// (Placeholders sit in quotes so the template still runs when opened straight from web/)
+const total = Number("{{TOTAL_MS}}") || 40000;
+let end = Date.now() + (Number("{{REMAINING_MS}}") || total);
+let lastAnswer = Date.now();
+
+function update() {
+  const left = Math.max(0, end - Date.now());
+  document.getElementById("left").textContent = Math.ceil(left / 1000);
+  document.getElementById("fill").style.width = (100 * (1 - left / total)) + "%";
+  document.body.classList.toggle("stale", Date.now() - lastAnswer > 3000);
+}
+// Lines the controller printed to its Serial Monitor come along with /status
+// and are shown here in the browser's console.
+let logSince = 0;
+function printLog(status) {
+  const missed = status.log_next - logSince - status.log.length;
+  if (missed > 0) {
+    console.log(`[controller] (${missed} earlier lines no longer kept)`);
+  }
+  for (const line of status.log) {
+    console.log("[controller] " + line);
+  }
+  logSince = status.log_next;
+}
+
+// Ask the controller how long is left, so the page notices when the run
+// finishes or is stopped from the remote or switch.
+async function check() {
+  try {
+    const status = await (await fetch("/status?since=" + logSince, { cache: "no-store" })).json();
+    printLog(status);
+    if (status.remaining_ms === 0) {
+      location.replace("/");
+      return;
+    }
+    end = Date.now() + status.remaining_ms;
+    lastAnswer = Date.now();
+  } catch (e) {
+    // Missed one; try again next time
+  }
+  setTimeout(check, 1000);
+}
+
+setInterval(update, 200);
+update();
+setTimeout(check, 1000);
+</script>
+</body>
+</html>

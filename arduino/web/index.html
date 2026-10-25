@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motor Control</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<main>
+  <section class="card">
+    <div class="clock" id="clock">{{NOW}}</div>
+    <p class="offline">Not connected to the controller</p>
+  </section>
+
+  <section class="card">
+    <h2>Move</h2>
+    <div class="controls">
+      <a class="btn up" href="/H">&#9650; Up</a>
+      <a class="btn down" href="/L">&#9660; Down</a>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Alarms</h2>
+    <!-- Sits above the list so it stays put however many alarms there are; disabled when the list is full -->
+    <form action="/add" method="get">
+      <fieldset class="add" {{FORM_DISABLED}}>
+      <input type="hidden" name="t" id="t">
+      <div class="time-picker">
+        <button type="button" class="field time-button" id="time-button" aria-haspopup="true" aria-expanded="false"></button>
+        <div class="popover" id="time-popover" hidden>
+          <div class="wheels" id="wheels"><div class="wheel-band"></div></div>
+          <button type="button" class="done" id="time-done">Done</button>
+        </div>
+      </div>
+      <div class="field toggle" role="radiogroup" aria-label="Direction">
+        <label class="up"><input type="radio" name="d" value="up" checked><span>Up</span></label>
+        <label class="down"><input type="radio" name="d" value="down"><span>Down</span></label>
+      </div>
+      <button class="btn" type="submit">Add</button>
+      </fieldset>
+    </form>
+    <ul class="alarms">
+      <!-- begin:alarm_row -->
+      <li data-minute="{{MINUTE}}">
+        <span class="alarm-time">{{TIME}}</span>
+        <span class="badge {{DIR}}">{{DIR}}</span>
+        <a class="remove" href="/del?i={{INDEX}}" aria-label="Remove alarm">&times;</a>
+      </li>
+      <!-- end:alarm_row -->
+    </ul>
+    <!-- begin:alarm_empty -->
+    <p class="empty">No alarms yet.</p>
+    <!-- end:alarm_empty -->
+  </section>
+</main>
+<script>
+// The controller's local time (seconds since midnight) as of its last answer
+// (Placeholders sit in quotes so the template still runs when opened straight from web/)
+let serverSeconds = Number("{{SECONDS}}") || 0;
+let syncedAt = Date.now();
+let lastAnswer = Date.now();
+
+const pad = n => String(n).padStart(2, "0");
+
+// Between answers the clock counts on from the last one. If the controller
+// stops answering, the clock is dimmed so it doesn't look current.
+function render() {
+  const s = Math.floor(serverSeconds + (Date.now() - syncedAt) / 1000) % 86400;
+  const hours = Math.floor(s / 3600);
+  document.getElementById("clock").textContent =
+    (hours % 12 || 12) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60) + " " + (hours < 12 ? "AM" : "PM");
+  document.body.classList.toggle("stale", Date.now() - lastAnswer > 3000);
+  sortAlarms(Math.floor(s / 60));
+}
+
+// List alarms soonest first: the next one to go off is at the top, and one
+// whose minute has come (or passed) drops to the bottom. Redone as the minute changes.
+let sortedFor = null;
+function sortAlarms(minute) {
+  if (minute === sortedFor) {
+    return;
+  }
+  sortedFor = minute;
+  const list = document.querySelector(".alarms");
+  const minutesUntil = li => (Number(li.dataset.minute) - minute - 1 + 1440) % 1440;
+  [...list.children].sort((a, b) => minutesUntil(a) - minutesUntil(b)).forEach(li => list.append(li));
+}
+// Lines the controller printed to its Serial Monitor come along with /status
+// and are shown here in the browser's console.
+let logSince = 0;
+function printLog(status) {
+  const missed = status.log_next - logSince - status.log.length;
+  if (missed > 0) {
+    console.log(`[controller] (${missed} earlier lines no longer kept)`);
+  }
+  for (const line of status.log) {
+    console.log("[controller] " + line);
+  }
+  logSince = status.log_next;
+}
+
+// Ask the controller for the time every second, and switch to the moving
+// page if a run has started (from an alarm, the remote or another browser).
+async function check() {
+  try {
+    const status = await (await fetch("/status?since=" + logSince, { cache: "no-store" })).json();
+    printLog(status);
+    if (status.remaining_ms > 0) {
+      location.replace("/moving");
+      return;
+    }
+    serverSeconds = status.seconds;
+    syncedAt = lastAnswer = Date.now();
+  } catch (e) {
+    // Missed one; try again next time
+  }
+  setTimeout(check, 1000);
+}
+
+setInterval(render, 250);
+render();
+setTimeout(check, 1000);
+
+// Alarm time picker, in place of the browser's own, whose popup can't be styled.
+// The chosen time goes to the form as "HH:MM" (24-hour) in the hidden "t" field.
+const time = { hour: 7, minute: 0, pm: false };  // hour is 1-12
+const timeButton = document.getElementById("time-button");
+const popover = document.getElementById("time-popover");
+
+// Each wheel is a column of rows that scrolls a whole row at a time; the row in
+// the middle band is the choice. ITEM must match --item in style.css.
+const ITEM = 36;
+const CHEVRON = '<svg width="14" height="8" viewBox="0 0 14 8" aria-hidden="true"><path d="M1 7l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function makeWheel(name, labels, get, set) {
+  const arrow = (direction, label) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "wheel-arrow " + direction;
+    button.setAttribute("aria-label", label);
+    button.innerHTML = CHEVRON;
+    return button;
+  };
+  const up = arrow("up", "Previous " + name);
+  const down = arrow("down", "Next " + name);
+  const column = document.createElement("div");
+  column.className = "column";
+  column.setAttribute("aria-label", name);
+  // Row an arrow or click is scrolling to. It's chosen straight away, so quick
+  // repeated clicks each move one more row, and closing the picker mid-scroll
+  // keeps the choice.
+  let target = null;
+  const scrollToRow = i => {
+    target = Math.max(0, Math.min(labels.length - 1, i));
+    set(target);
+    renderTime();
+    column.scrollTo({ top: target * ITEM, behavior: "smooth" });
+  };
+  labels.forEach((label, i) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.textContent = label;
+    option.onclick = () => scrollToRow(i);
+    column.append(option);
+  });
+  up.onclick = () => scrollToRow((target ?? get()) - 1);
+  down.onclick = () => scrollToRow((target ?? get()) + 1);
+  // Whatever row is in the middle is the choice, whether it got there by
+  // scrolling, an arrow or a click
+  column.addEventListener("scroll", () => {
+    if (target !== null) {
+      // Still animating to the clicked row, which is already chosen
+      if (Math.abs(column.scrollTop - target * ITEM) < 1) {
+        target = null;
+      }
+      return;
+    }
+    set(Math.max(0, Math.min(labels.length - 1, Math.round(column.scrollTop / ITEM))));
+    renderTime();
+  });
+
+  const wheel = document.createElement("div");
+  wheel.className = "wheel";
+  wheel.append(up, column, down);
+  document.getElementById("wheels").append(wheel);
+  return { column, up, down, get, last: labels.length - 1 };
+}
+
+const wheels = [
+  makeWheel("hour", [...Array(12)].map((_, i) => String(i + 1)), () => time.hour - 1, i => time.hour = i + 1),
+  makeWheel("minute", [...Array(60)].map((_, i) => pad(i)), () => time.minute, i => time.minute = i),
+  makeWheel("AM or PM", ["AM", "PM"], () => time.pm ? 1 : 0, i => time.pm = i === 1),
+];
+
+function renderTime() {
+  timeButton.textContent = time.hour + ":" + pad(time.minute) + " " + (time.pm ? "PM" : "AM");
+  document.getElementById("t").value = pad(time.hour % 12 + (time.pm ? 12 : 0)) + ":" + pad(time.minute);
+  for (const { column, up, down, get, last } of wheels) {
+    [...column.children].forEach((option, i) => option.classList.toggle("selected", i === get()));
+    up.disabled = get() === 0;
+    down.disabled = get() === last;
+  }
+}
+
+function showPicker(open) {
+  popover.hidden = !open;
+  timeButton.setAttribute("aria-expanded", open);
+  if (open) {
+    for (const { column, get } of wheels) {
+      column.scrollTop = get() * ITEM;
+    }
+  }
+}
+
+timeButton.onclick = () => showPicker(popover.hidden);
+document.getElementById("time-done").onclick = () => showPicker(false);
+document.addEventListener("click", e => { if (!e.target.closest(".time-picker")) showPicker(false); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") showPicker(false); });
+renderTime();
+</script>
+</body>
+</html>
