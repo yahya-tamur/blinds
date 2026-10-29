@@ -2,6 +2,7 @@ __pycache__/
 arduino/arduino_secrets.h
 carrier/firmware/build/
 carrier/firmware/main/secrets.h
-carrier/pcb/
+carrier/pcb/*
+!carrier/pcb/enclosure/
 carrier/firmware/sdkconfig
 CLAUDE.md
