@@ -6,6 +6,7 @@
     out_dir/index.html                          <- index.html (landing page)
     out_dir/soldering-guide/index.html          <- rev2_soldering_guide.html
     out_dir/soldering-guide/rev2_solder_order.png
+    out_dir/favicon.svg, out_dir/soldering-guide/favicon.svg   <- favicon.svg (same icon as the controller's page)
 """
 import os, shutil, sys
 
@@ -14,6 +15,8 @@ ROUTES = {
     "index.html": "index.html",
     "soldering-guide/index.html": "rev2_soldering_guide.html",
     "soldering-guide/rev2_solder_order.png": "rev2_solder_order.png",
+    "favicon.svg": "favicon.svg",                    # each page links the icon beside it
+    "soldering-guide/favicon.svg": "favicon.svg",
 }
 
 out = sys.argv[1] if len(sys.argv) > 1 else "_site"

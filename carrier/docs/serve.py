@@ -22,7 +22,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        if self.path == "/favicon.ico":                  # browsers ask for one; there isn't one
+        if self.path == "/favicon.ico":                  # the pages link favicon.svg; answer the default request quietly
             self.send_response(204); self.end_headers(); return
         path = self.path.split("?")[0]
         if path.startswith("/soldering-guide/"):           # same addresses as on the public site (build_site.py)
