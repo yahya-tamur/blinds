@@ -7,7 +7,7 @@ then open http://127.0.0.1:8766/. It answers the same addresses as wifi.cpp and
 fills the templates the same way, keeping alarms and the motor state in memory:
 
   - the clock is this computer's local time
-  - Up / Down "run the motor" for 40 s (nothing moves; /moving counts down)
+  - Up / Down "run the motor" for 65.5 s, like a full run with its planned stops (nothing moves; /moving counts down)
   - Stop and the alarm list work, and alarms go off at their minute like on the board
   - what it would print to the Serial Monitor goes to the browser console via /status,
     like log.cpp (there's no memory readout, since there's no board to measure)
@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from build_pages import all_templates
 
-RUN_MS = 40000
+RUN_MS = 65500
 MAX_ALARMS = 20
 
 lock = threading.Lock()
@@ -126,6 +126,8 @@ def moving_page():
         "DIR": "up" if run[0] > 0 else "down",
         "TOTAL_MS": run[2],
         "REMAINING_MS": remaining_ms(),
+        "NOW": format_time(seconds_now(), True),
+        "SECONDS": seconds_now(),
     })
 
 

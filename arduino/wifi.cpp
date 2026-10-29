@@ -279,6 +279,7 @@ static void send_moving(WiFiClient& client) {
     send_redirect(client, "/");
     return;
   }
+  long seconds = get_second();
   out_begin(client);
   out_headers("text/html");
 
@@ -299,6 +300,11 @@ static void send_moving(WiFiClient& client) {
       out_print(motor_ms);
     } else if (is(name, len, "REMAINING_MS")) {
       out_print(remaining);
+    } else if (is(name, len, "NOW")) {
+      format_time(text, sizeof(text), seconds, true);
+      out_print(text);
+    } else if (is(name, len, "SECONDS")) {
+      out_print((unsigned long)seconds);
     }
   }
   out_print(p);

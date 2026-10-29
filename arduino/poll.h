@@ -6,7 +6,8 @@
 #define SOURCE_REMOTE 2
 #define SOURCE_WIFI 3
 
-// Returned by poll() for the remote's cancel button and the web page's Stop button
+// Returned by poll() for the remote's cancel button, the web page's Stop button
+// and the switch going back to off
 #define CMD_CANCEL 2
 
 // Returns 1 (up), -1 (down), CMD_CANCEL or 0, and sets *source to where it came from.

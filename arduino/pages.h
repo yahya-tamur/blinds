@@ -10,7 +10,7 @@ const char INDEX_HTML[] = R"PAGE(<!DOCTYPE html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Motor Control</title>
-<link rel="stylesheet" href="style.css?v=8d83197e">
+<link rel="stylesheet" href="style.css?v=4c1b891e">
 <link rel="icon" href="favicon.svg?v=92d153e1" type="image/svg+xml">
 </head>
 <body>
@@ -215,36 +215,54 @@ const char ALARM_ROW_HTML[] = R"PAGE(<li data-minute="{{MINUTE}}">
 
 const char ALARM_EMPTY_HTML[] = R"PAGE(<p class="empty">No alarms yet.</p>)PAGE";
 
-// placeholders: DIR, REMAINING_MS, TOTAL_MS
+// placeholders: DIR, NOW, REMAINING_MS, SECONDS, TOTAL_MS
 const char MOVING_HTML[] = R"PAGE(<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Motor Moving</title>
-<link rel="stylesheet" href="style.css?v=8d83197e">
+<link rel="stylesheet" href="style.css?v=4c1b891e">
 <link rel="icon" href="favicon.svg?v=92d153e1" type="image/svg+xml">
 </head>
 <body>
 <main>
+<section class="card">
+<div class="clock" id="clock">{{NOW}}</div>
+<p class="offline">Not connected to the controller</p>
+</section>
+<section class="card">
+<h2>Move</h2>
+<div class="controls">
+<a class="btn stop" href="/cancel">&#9632; Stop</a>
+</div>
+</section>
 <section class="card moving">
 <div class="arrow {{DIR}}">&#9650;</div>
 <h1>Moving {{DIR}}</h1>
 <p class="remaining"><span id="left"></span> s remaining</p>
 <div class="bar {{DIR}}"><div id="fill"></div></div>
-<a class="btn stop" href="/cancel">&#9632; Stop</a>
-<p class="offline">Not connected to the controller</p>
 <p class="note">
-You can also stop it with the cancel button on the remote or either switch button.
+You can also stop it with the cancel button on the remote, or by turning the switch back to off.
 </p>
 </section>
 </main>
 <script>
 // (Placeholders sit in quotes so the template still runs when opened straight from web/)
-const total = Number("{{TOTAL_MS}}") || 40000;
+const total = Number("{{TOTAL_MS}}") || 65500;
 let end = Date.now() + (Number("{{REMAINING_MS}}") || total);
+// The controller's local time (seconds since midnight) as of its last answer
+let serverSeconds = Number("{{SECONDS}}") || 0;
+let syncedAt = Date.now();
 let lastAnswer = Date.now();
+const pad = n => String(n).padStart(2, "0");
+// Clock and countdown count on between answers. If the controller stops
+// answering, they're dimmed so they don't look current.
 function update() {
+const s = Math.floor(serverSeconds + (Date.now() - syncedAt) / 1000) % 86400;
+const hours = Math.floor(s / 3600);
+document.getElementById("clock").textContent =
+(hours % 12 || 12) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60) + " " + (hours < 12 ? "AM" : "PM");
 const left = Math.max(0, end - Date.now());
 document.getElementById("left").textContent = Math.ceil(left / 1000);
 document.getElementById("fill").style.width = (100 * (1 - left / total)) + "%";
@@ -263,8 +281,8 @@ console.log("[controller] " + line);
 }
 logSince = status.log_next;
 }
-// Ask the controller how long is left, so the page notices when the run
-// finishes or is stopped from the remote or switch.
+// Ask the controller the time and how long is left, so the page notices when
+// the run finishes or is stopped from the remote or switch.
 async function check() {
 try {
 const status = await (await fetch("/status?since=" + logSince, { cache: "no-store" })).json();
@@ -274,7 +292,8 @@ location.replace("/");
 return;
 }
 end = Date.now() + status.remaining_ms;
-lastAnswer = Date.now();
+serverSeconds = status.seconds;
+syncedAt = lastAnswer = Date.now();
 } catch (e) {
 // Missed one; try again next time
 }
@@ -520,7 +539,7 @@ font-weight: 600;
 .bar div { height: 100%; width: 0; transition: width .2s linear; }
 .bar.up div { background: var(--up); }
 .bar.down div { background: var(--down); }
-.btn.stop { margin-top: 24px; background: var(--danger); color: #fff; }
+.btn.stop { grid-column: 1 / -1; background: var(--danger); color: #fff; }
 .note { margin: 16px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .offline { display: none; margin: 8px 0 0; text-align: center; color: var(--danger); font-size: 14px; }
 .stale .offline { display: block; }

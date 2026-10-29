@@ -11,17 +11,18 @@
 // Which dirPin level counts as 'up'. Swap to LOW/HIGH to reverse.
 const bool UP_DIR = LOW;
 
-const unsigned long RUN_MS = 40000;
+const unsigned long RUN_MS = 60000;  // time at cruising speed for a full run
 
-// How far the motor goes per loop while a switch button is held (0.1 s worth).
-// It's topped up every loop, so the motor moves steadily until the button is let go.
-const unsigned long JOG_STEPS = STEPS_PER_SECOND / 10;
+// Planned stops partway through a run, so a stalled motor can catch up (see motor.h)
+const int RUN_STOPS = 5;
 
-// A 40 s run started by the remote, the web page or an alarm is in progress
+// What the web page counts down from: RUN_MS, plus about 0.5 s lost to each
+// slow-down and speed-up pair, the planned stops' rests and the back-off.
+const unsigned long RUN_EXPECTED_MS = RUN_MS + (RUN_STOPS + 1) * 500 + RUN_STOPS * PLANNED_STOP_MS + 1500;
+
+// A run started by the remote, the web page or an alarm is in progress
+// (until the motor is at rest again, including its back-off)
 bool timed_run = false;
-
-// The switch press that cancelled a run shouldn't also move the motor
-bool wait_for_switch_release = false;
 
 const unsigned long MEMORY_REPORT_MS = 5000;
 unsigned long last_memory_report = 0;
@@ -30,29 +31,41 @@ bool to_dir(int p) {
   return p > 0 ? UP_DIR : !UP_DIR;
 }
 
+// A run speeds up, travels with RUN_STOPS planned stops, slows to a stop, then
+// turns a quarter turn back
 void start_run(int p) {
-  motor_move(to_dir(p), RUN_MS * STEPS_PER_SECOND / 1000);
-  set_motor_state(p, RUN_MS);
+  configure_driver();
+  motor_move(to_dir(p), RUN_MS * STEPS_PER_SECOND / 1000, true, RUN_STOPS);
+  set_motor_state(p, RUN_EXPECTED_MS);
   timed_run = true;
 }
 
+// Slows to a stop and turns a quarter turn back, as at the end of a run
 void cancel_run(const char* message) {
-  motor_stop();
+  motor_stop(true);
   set_motor_state(0, 0);
   timed_run = false;
   Log.println(message);
 }
 
 void setup() {
-  // put your setup code here, to run once:
+  // The program runs on its own, larger stack (see memstats.h)
+  run_on_program_stack(program);
+}
 
-  initialize_memory_stats();
+// Started by setup() on the program's stack: the real setup, then loop()
+// forever, as the board's own main() would have done.
+void program() {
   Serial.begin(9600);
 
   initialize_motor();
   initialize_clock();
   initialize_alarms();
   initialize_all();  // connects to WiFi and syncs the RTC
+
+  for (;;) {
+    loop();
+  }
 }
 
 int p = 0;
@@ -77,26 +90,13 @@ void loop() {
   int source;
   p = poll(&source);
 
-  bool switch_held = source == SOURCE_SWITCH && p != 0;
-  if (wait_for_switch_release && !switch_held) {
-    wait_for_switch_release = false;
-    delay(50);  // let the button settle
-  }
-
-  if (switch_held) {
+  if (p == CMD_CANCEL) {
     if (timed_run) {
-      cancel_run("Cancelled by switch");
-      wait_for_switch_release = true;
-    } else if (!wait_for_switch_release) {
-      // The switch moves the motor only while it is held
-      motor_move(to_dir(p), JOG_STEPS);
-    }
-  } else if (p == CMD_CANCEL) {
-    if (timed_run) {
-      cancel_run(source == SOURCE_REMOTE ? "Cancelled by remote" : "Cancelled from web page");
+      cancel_run(source == SOURCE_SWITCH ? "Cancelled by switch"
+                 : source == SOURCE_REMOTE ? "Cancelled by remote" : "Cancelled from web page");
     }
   } else if (p != 0) {
-    // Up/down from the remote or web page start a run; they're ignored while one is going
+    // Up/down from the switch, remote or web page start a run; they're ignored while one is going
     if (!timed_run) {
       start_run(p);
     }

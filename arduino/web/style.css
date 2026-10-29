@@ -227,7 +227,8 @@ h2 {
 .bar div { height: 100%; width: 0; transition: width .2s linear; }
 .bar.up div { background: var(--up); }
 .bar.down div { background: var(--down); }
-.btn.stop { margin-top: 24px; background: var(--danger); color: #fff; }
+/* Stop spans both columns, so it covers where Up and Down were */
+.btn.stop { grid-column: 1 / -1; background: var(--danger); color: #fff; }
 .note { margin: 16px 0 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
 .offline { display: none; margin: 8px 0 0; text-align: center; color: var(--danger); font-size: 14px; }
 .stale .offline { display: block; }
