@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Motor Moving</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+</head>
+<body>
+<main>
+  <!-- The first two cards match the main page's, so Stop lands exactly where
+       Up and Down were: clicking again without moving the mouse stops the motor -->
+  <section class="card">
+    <div class="clock" id="clock">&ndash;:&ndash;&ndash;</div>
+    <p class="offline">Not connected to the controller</p>
+  </section>
+
+  <section class="card">
+    <h2>Move</h2>
+    <div class="controls">
+      <a class="btn stop" href="/" id="stop">&#9632; Stop</a>
+    </div>
+  </section>
+
+  <section class="card moving">
+    <div class="arrow" id="arrow">&#9650;</div>
+    <h1 id="heading">Moving</h1>
+    <p class="remaining"><span id="left"></span> s remaining</p>
+    <div class="bar" id="bar"><div id="fill"></div></div>
+    <p class="note">
+      You can also stop it with the cancel button on the remote, or by turning the switch back to off.
+    </p>
+  </section>
+</main>
+<script>
+// The page is static: the run's direction, length and progress come from /api/status.
+let total = null;   // until the first answer
+let end = Date.now();
+
+// The controller's local time (seconds since midnight) as of its last answer, or null if it
+// doesn't know the time yet
+let serverSeconds = null;
+let syncedAt = Date.now();
+let lastAnswer = Date.now();
+
+const pad = n => String(n).padStart(2, "0");
+
+// Clock and countdown count on between answers. If the controller stops
+// answering, they're dimmed so they don't look current.
+function update() {
+  document.body.classList.toggle("stale", Date.now() - lastAnswer > 3000);
+  if (serverSeconds !== null) {
+    const s = Math.floor(serverSeconds + (Date.now() - syncedAt) / 1000) % 86400;
+    const hours = Math.floor(s / 3600);
+    document.getElementById("clock").textContent =
+      (hours % 12 || 12) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60) + " " + (hours < 12 ? "AM" : "PM");
+  }
+
+  if (total === null) {
+    return;
+  }
+  const left = Math.max(0, end - Date.now());
+  document.getElementById("left").textContent = Math.ceil(left / 1000);
+  document.getElementById("fill").style.width = (100 * (1 - left / total)) + "%";
+}
+
+// Lines the controller printed to its Serial Monitor come along with /status
+// and are shown here in the browser's console.
+let logSince = 0;
+function printLog(status) {
+  const missed = status.log_next - logSince - status.log.length;
+  if (missed > 0) {
+    console.log(`[controller] (${missed} earlier lines no longer kept)`);
+  }
+  for (const line of status.log) {
+    console.log("[controller] " + line);
+  }
+  logSince = status.log_next;
+}
+
+// Ask the controller the time and how long is left, so the page notices when
+// the run finishes or is stopped from the remote or switch.
+async function check() {
+  try {
+    const status = await (await fetch("/api/status?since=" + logSince, { cache: "no-store" })).json();
+    printLog(status);
+    if (status.remaining_ms === 0) {
+      location.replace("/");
+      return;
+    }
+    document.getElementById("arrow").className = "arrow " + status.dir;
+    document.getElementById("bar").className = "bar " + status.dir;
+    document.getElementById("heading").textContent = "Moving " + status.dir;
+    total = status.total_ms;
+    end = Date.now() + status.remaining_ms;
+    serverSeconds = status.seconds;
+    syncedAt = lastAnswer = Date.now();
+  } catch (e) {
+    // Missed one; try again next time
+  }
+  setTimeout(check, 1000);
+}
+
+setInterval(update, 200);
+update();
+check();
+
+document.getElementById("stop").onclick = async e => {
+  e.preventDefault();
+  try {
+    await fetch("/api/cancel", { method: "POST" });
+  } catch (err) {
+    return;
+  }
+  location.replace("/");
+};
+</script>
+</body>
+</html>

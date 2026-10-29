@@ -1,0 +1,208 @@
+<title>Carrier Rev 2 Soldering</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: the page always fits the window. A script measures it and puts the board picture either beside the
+   checklist or above it, whichever gives the bigger picture while the list keeps a readable minimum
+   (about 240 px wide beside it, or the next part plus two rows below it). Leftover space goes to the list. */
+:root {
+  --bg: #f4f5f1;         /* bench paper, faint green bias toward the solder mask */
+  --surface: #ffffff;
+  --ink: #1c2320;
+  --muted: #66706b;
+  --line: #dde1da;
+  --next: #e09a12;       /* the one thing to look at: the next part */
+  --next-soft: #fbefd4;
+  --done-ink: #9aa29d;
+  --g-red: #d64834; --g-blue: #286ec8; --g-green: #28965a; --g-purple: #8250aa;   /* badge colours on the picture */
+  --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --imgw: 600px; --imgh: 505px;   /* set by the script */
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e;
+  --next: #f0b23a; --next-soft: #3a2f17; --done-ink: #5e6762; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e;
+  --next: #f0b23a; --next-soft: #3a2f17; --done-ink: #5e6762; color-scheme: dark }
+
+html, body { height: 100%; overflow: hidden; }
+body { background: var(--bg); color: var(--ink); font: 15px/1.4 var(--font-body); }
+.app { height: 100%; box-sizing: border-box; display: grid; gap: 10px 14px;
+       padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
+       padding-block: 10px; }
+.app.side  { grid-template-columns: var(--imgw) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+             grid-template-areas: "pic head" "pic list"; }
+.app.stack { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto var(--imgh) minmax(0, 1fr);
+             grid-template-areas: "head" "pic" "list"; }
+
+.head { grid-area: head; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.head .top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
+h1 { font-size: 1rem; margin: 0; text-wrap: balance; }
+.progress { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.progress b { color: var(--ink); }
+.bar { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.bar > div { height: 100%; width: 0; background: var(--next); transition: width .25s; }
+
+/* the picture box always has the picture's exact proportions (size set by the script), so nothing stretches */
+.pic { grid-area: pic; position: relative; width: var(--imgw); height: var(--imgh); justify-self: center; align-self: start;
+       border-radius: 6px; overflow: hidden; }
+.pic img, .pic svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.pic .done-mark { fill: rgba(0,0,0,.55); }
+.pic .target { fill: none; stroke: var(--next); stroke-width: 7; }
+.pic .target.pulse { animation: pulse 1.4s ease-in-out infinite; }
+.pic .preview { fill: none; stroke: #ffffff; stroke-width: 5; stroke-dasharray: 14 10; }
+@keyframes pulse { 50% { stroke-opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .pic .target.pulse { animation: none; } }
+
+button { font: inherit; color: inherit; cursor: pointer; }
+.btn { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; }
+.btn:focus-visible, .row:focus-visible, .row input:focus-visible { outline: 2px solid var(--next); outline-offset: 2px; }
+
+/* checklist */
+.list { grid-area: list; container: parts / inline-size; position: relative; overflow-y: auto; overscroll-behavior: contain; min-height: 0; min-width: 0;
+        padding-right: 2px; display: flex; flex-direction: column; gap: 14px; }
+.group h2 { font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 5px;
+            display: flex; align-items: center; gap: 8px; }
+.group h2 .chip { width: 11px; height: 11px; border-radius: 50%; background: var(--c); flex: none; }
+.group h2 .count { margin-left: auto; font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; }
+.rows { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.row { display: grid; grid-template-columns: 22px 2.4ch minmax(0, 1fr) auto; gap: 0 8px; align-items: center;
+       padding: 6px 8px; border-top: 1px solid var(--line); cursor: pointer; }
+.row:first-child { border-top: 0; border-radius: 8px 8px 0 0; }
+.row:last-child { border-radius: 0 0 8px 8px; }
+.row input { width: 18px; height: 18px; margin: 0; accent-color: var(--next); cursor: pointer; }
+.row .n { font-weight: 700; color: var(--c); text-align: right; font-variant-numeric: tabular-nums; }
+.row .name { min-width: 0; }
+.row .ref { color: var(--muted); font-size: .85rem; margin-left: 4px; }
+.row .orient { display: block; color: var(--muted); font-size: .86rem; line-height: 1.3; margin-top: 1px; }
+.row .lcsc { font-family: var(--font-mono); font-size: .8rem; color: var(--muted); white-space: nowrap; text-align: right; }
+/* in a thin list, two-part numbers (DevKit sockets) stack instead of widening the column */
+@container parts (max-width: 420px) { .row .lcsc .pn { display: block; } .row .lcsc .plus { display: none; } }
+.row.done .name, .row.done .lcsc, .row.done .n, .row.done .orient { color: var(--done-ink); }
+.row.done .name { text-decoration: line-through; text-decoration-color: var(--line); }
+.row:hover:not(.is-next) { background: color-mix(in srgb, var(--next-soft) 45%, transparent); }
+/* the next row is the next-part card */
+.row.is-next { background: var(--next-soft); box-shadow: inset 4px 0 0 var(--next); padding: 9px 8px; grid-template-columns: 22px 3ch minmax(0, 1fr) auto; }
+.row.is-next .n { font-size: 1.35rem; }
+.row.is-next .name { font-weight: 700; }
+.row.is-next .orient { color: var(--ink); font-size: .92rem; font-weight: 400; }
+.row.is-next .lcsc { color: var(--ink); font-size: .88rem; }
+.btn.small { padding: 2px 8px; font-size: .82rem; margin-left: 8px; vertical-align: 1px; }
+.btn.armed { border-color: var(--g-red); color: var(--g-red); }
+</style>
+
+<div class="app side" id="app">
+  <div class="head" id="head">
+    <div class="top">
+      <h1>Carrier rev 2 · soldering order</h1>
+      <span class="progress"><b id="doneCount">0</b> of <span id="total">45</span> soldered
+        <button class="btn small" id="resetBtn" type="button">Reset progress</button></span>
+    </div>
+    <div class="bar" aria-hidden="true"><div id="barFill"></div></div>
+  </div>
+  <div class="pic" id="pic">
+    <img src="rev2_solder_order.png" alt="Rev 2 board with every part numbered in soldering order">
+    <svg viewBox="0 0 1568 1320" aria-hidden="true"><g id="doneMarks"></g><rect id="preview" class="preview" hidden></rect><rect id="target" class="target pulse"></rect></svg>
+  </div>
+  <section class="list" id="list" aria-label="Parts in soldering order" aria-live="polite"></section>
+</div>
+
+<script>
+const GROUPS = [{"key": "red", "title": "Resistors and capacitors (0805)", "items": [{"ref": "R1", "name": "47k resistor", "lcsc": "C17713", "orient": "", "n": 1, "box": [612.1, 557.5, 55.4, 31.7], "label": "R1"}, {"ref": "R2", "name": "10k resistor", "lcsc": "C17414", "orient": "", "n": 2, "box": [1036.7, 435.5, 55.4, 32.0], "label": "R2"}, {"ref": "R5", "name": "10k resistor", "lcsc": "C17414", "orient": "", "n": 3, "box": [868.5, 788.2, 55.4, 31.7], "label": "R5"}, {"ref": "R7", "name": "10k resistor", "lcsc": "C17414", "orient": "", "n": 4, "box": [1116.9, 892.4, 55.3, 31.7], "label": "R7"}, {"ref": "R9", "name": "10k resistor", "lcsc": "C17414", "orient": "", "n": 5, "box": [1213.2, 892.4, 55.1, 31.7], "label": "R9"}, {"ref": "R11", "name": "10k resistor", "lcsc": "C17414", "orient": "", "n": 6, "box": [1020.7, 507.6, 55.4, 32.0], "label": "R11"}, {"ref": "R13", "name": "10k resistor", "lcsc": "C17414", "orient": "", "n": 7, "box": [1078.6, 507.6, 55.3, 32.0], "label": "R13"}, {"ref": "R3", "name": "1k resistor", "lcsc": "C17513", "orient": "", "n": 8, "box": [1036.7, 687.1, 55.4, 32.0], "label": "R3"}, {"ref": "R6", "name": "1k resistor", "lcsc": "C17513", "orient": "", "n": 9, "box": [1116.9, 932.4, 55.3, 31.7], "label": "R6"}, {"ref": "R8", "name": "1k resistor", "lcsc": "C17513", "orient": "", "n": 10, "box": [1213.2, 932.4, 55.1, 31.7], "label": "R8"}, {"ref": "R10", "name": "1k resistor", "lcsc": "C17513", "orient": "", "n": 11, "box": [1020.7, 547.7, 55.4, 32.0], "label": "R10"}, {"ref": "R12", "name": "1k resistor", "lcsc": "C17513", "orient": "", "n": 12, "box": [1078.6, 547.7, 55.3, 32.0], "label": "R12"}, {"ref": "R4", "name": "100 Ω resistor", "lcsc": "C17408", "orient": "", "n": 13, "box": [868.5, 828.3, 55.4, 31.7], "label": "R4"}, {"ref": "C5", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 14, "box": [426.3, 327.5, 32.9, 55.9], "label": "C5"}, {"ref": "C6", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 15, "box": [426.3, 391.4, 32.9, 56.1], "label": "C6"}, {"ref": "C7", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 16, "box": [812.2, 403.1, 55.8, 32.7], "label": "C7"}, {"ref": "C9", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 17, "box": [1116.7, 972.0, 55.9, 32.7], "label": "C9"}, {"ref": "C10", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 18, "box": [1212.7, 972.0, 56.1, 32.7], "label": "C10"}, {"ref": "C11", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 19, "box": [1020.5, 587.4, 55.8, 32.7], "label": "C11"}, {"ref": "C12", "name": "100 nF capacitor", "lcsc": "C49678", "orient": "", "n": 20, "box": [1078.1, 587.4, 55.9, 32.7], "label": "C12"}, {"ref": "C2", "name": "10 µF capacitor", "lcsc": "C15850", "orient": "", "n": 21, "box": [1052.6, 1060.2, 55.8, 32.7], "label": "C2"}, {"ref": "C3", "name": "10 µF capacitor", "lcsc": "C15850", "orient": "", "n": 22, "box": [1048.1, 343.5, 32.7, 55.9], "label": "C3"}, {"ref": "C8", "name": "4.7 µF capacitor", "lcsc": "C1779", "orient": "", "n": 23, "box": [868.3, 867.9, 55.8, 32.7], "label": "C8"}, {"ref": "C13", "name": "4.7 µF capacitor", "lcsc": "C1779", "orient": "", "n": 24, "box": [772.2, 268.4, 55.8, 32.9], "label": "C13"}]}, {"key": "blue", "title": "Diodes, fuse, MOSFET, bulk capacitor", "items": [{"ref": "D2", "name": "15 V zener", "lcsc": "C2126", "orient": "Band (−) to the left", "n": 25, "box": [713.5, 528.4, 76.9, 38.5], "label": "D2"}, {"ref": "C1", "name": "1 µF 100 V capacitor (1206)", "lcsc": "C13832", "orient": "", "n": 26, "box": [676.6, 790.6, 38.5, 75.0], "label": "C1"}, {"ref": "F1", "name": "3 A fuse", "lcsc": "C178991", "orient": "", "n": 27, "box": [609.7, 760.3, 60.3, 119.5], "label": "F1"}, {"ref": "D1", "name": "33 V TVS", "lcsc": "C2938921", "orient": "", "n": 28, "box": [602.9, 608.6, 73.7, 118.6], "label": "D1"}, {"ref": "D3", "name": "24 V TVS", "lcsc": "C224017", "orient": "Band (−) down", "n": 29, "box": [492.4, 336.1, 73.6, 118.6], "label": "D3"}, {"ref": "D4", "name": "SS14 diode", "lcsc": "C2480", "orient": "Band (−) to the right", "n": 30, "box": [1023.6, 1095.7, 113.8, 57.7], "label": "D4"}, {"ref": "Q1", "name": "MOSFET", "lcsc": "C513222", "orient": "Big tab on the big pad (right)", "n": 31, "box": [704.8, 586.9, 179.5, 113.8], "label": "Q1"}, {"ref": "C4", "name": "100 µF capacitor", "lcsc": "C178548", "orient": "+ pad at the top, black stripe (−) down", "n": 32, "box": [416.2, 152.0, 142.6, 169.5], "label": "C4"}]}, {"key": "green", "title": "Through-hole parts and connectors", "items": [{"ref": "U6", "name": "IR receiver", "lcsc": "C141632", "orient": "Lay it flat to the right, lens up; OUT leg in the square hole (top)", "n": 33, "box": [780.8, 1066.1, 171.3, 131.4], "label": "U6"}, {"ref": "J2", "name": "Motor connector", "lcsc": "C144395", "orient": "Square pad on the left", "n": 34, "box": [567.7, 148.7, 216.2, 109.8], "label": "J2"}, {"ref": "J4", "name": "Hall sensor connector", "lcsc": "C144395", "orient": "Square pad on the left", "n": 35, "box": [784.2, 148.7, 216.0, 109.8], "label": "J4"}, {"ref": "J3", "name": "Switch connector", "lcsc": "C144394", "orient": "Square pad on the left", "n": 36, "box": [776.2, 946.9, 176.0, 109.5], "label": "J3"}, {"ref": "J1", "name": "Power jack", "lcsc": "C381115", "orient": "Opening toward the bottom edge", "n": 37, "box": [584.5, 945.9, 184.3, 257.8], "label": "J1"}]}, {"key": "purple", "title": "Sockets and buck module", "items": [{"ref": "DEVKIT_L", "name": "DevKit left sockets, 1x20 + 1x02", "lcsc": "C2897383 + C2897365", "orient": "1x20 at the top; file the touching ends flat", "n": 38, "box": [963.5, 296.1, 41.7, 895.8], "label": ""}, {"ref": "DEVKIT_R", "name": "DevKit right sockets, 1x20 + 1x02", "lcsc": "C2897383 + C2897365", "orient": "1x20 at the top; file the touching ends flat", "n": 39, "box": [1370.5, 296.1, 41.7, 895.8], "label": ""}, {"ref": "STEP_L", "name": "StepStick left socket, 1x8", "lcsc": "C2897371", "orient": "", "n": 40, "box": [159.0, 139.0, 41.7, 326.9], "label": ""}, {"ref": "STEP_R", "name": "StepStick right socket, 1x8", "lcsc": "C2897371", "orient": "", "n": 41, "box": [362.6, 139.0, 41.7, 326.9], "label": ""}, {"ref": "STEP_TOP", "name": "StepStick INDEX/DIAG socket, 1x2", "lcsc": "C2897365", "orient": "", "n": 42, "box": [199.1, 139.0, 83.3, 41.7], "label": ""}, {"ref": "RTC6", "name": "DS3231 signal socket, 1x6", "lcsc": "C2897369", "orient": "", "n": 43, "box": [651.0, 326.5, 245.2, 41.7], "label": ""}, {"ref": "RTC4", "name": "DS3231 support socket, 1x4", "lcsc": "C2897367", "orient": "", "n": 44, "box": [691.1, 897.0, 165.1, 41.7], "label": ""}, {"ref": "U2", "name": "LM2596 module on 4 pins", "lcsc": "C2337", "orient": "IN− / IN+ at the top; IN− is the square pad, top-left", "n": 45, "box": [162.4, 483.6, 346.0, 697.1], "label": "U2"}]}];
+const COLORS = { red: "var(--g-red)", blue: "var(--g-blue)", green: "var(--g-green)", purple: "var(--g-purple)" };
+const KEY = "carrier-rev2-solder-v1";
+const ASPECT = 1568 / 1320;
+const LIST_MIN_W = 240, LIST_MIN_H = 150;   // a readable list beside the picture / the next part plus two rows below it
+const items = GROUPS.flatMap(g => g.items.map(it => ({ ...it, group: g.key })));
+let done = new Set();
+try { done = new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify([...done])); } catch (e) {} };
+
+const $ = id => document.getElementById(id);
+const esc = s => s.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+$("total").textContent = items.length;
+
+$("list").innerHTML = GROUPS.map(g => `
+  <div class="group" style="--c:${COLORS[g.key]}">
+    <h2><span class="chip"></span>${esc(g.title)}<span class="count" data-count="${g.key}"></span></h2>
+    <div class="rows">${g.items.map(it => `
+      <div class="row" id="row${it.n}" data-n="${it.n}" tabindex="-1">
+        <input type="checkbox" id="chk${it.n}" aria-label="Soldered: ${it.n} ${esc(it.name)}">
+        <span class="n">${it.n}</span>
+        <span class="name">${esc(it.name)}${it.label ? `<span class="ref">${it.label}</span>` : ""}${it.orient ? `<span class="orient">${esc(it.orient)}</span>` : ""}</span>
+        <span class="lcsc">${it.lcsc.split(" + ").map(c => `<span class="pn">${esc(c)}</span>`).join('<span class="plus"> + </span>')}</span>
+      </div>`).join("")}
+    </div>
+  </div>`).join("");
+
+// Pick the layout that gives the bigger picture, then size the picture box to its exact proportions.
+function layout() {
+  const app = $("app"), cs = getComputedStyle(app);
+  const W = app.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const H = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  const gapX = parseFloat(cs.columnGap) || 14, gapY = parseFloat(cs.rowGap) || 10, headH = $("head").offsetHeight;
+  const sideW = Math.max(0, Math.min(W - LIST_MIN_W - gapX, H * ASPECT));
+  const stackW = Math.max(0, Math.min(W, (H - headH - LIST_MIN_H - 2 * gapY) * ASPECT));
+  const side = sideW >= stackW, w = Math.floor(side ? sideW : stackW);
+  app.classList.toggle("side", side); app.classList.toggle("stack", !side);
+  app.style.setProperty("--imgw", w + "px"); app.style.setProperty("--imgh", Math.floor(w / ASPECT) + "px");
+}
+
+const setBox = (el, it) => { const [x, y, w, h] = it.box, p = 10;
+  el.setAttribute("x", x - p); el.setAttribute("y", y - p); el.setAttribute("width", w + 2 * p); el.setAttribute("height", h + 2 * p); };
+
+function render(scroll) {
+  const next = items.find(it => !done.has(it.n));
+  items.forEach(it => {
+    const row = $("row" + it.n);
+    row.classList.toggle("done", done.has(it.n));
+    row.classList.toggle("is-next", next === it);
+    $("chk" + it.n).checked = done.has(it.n);
+  });
+  GROUPS.forEach(g => { const d = g.items.filter(it => done.has(it.n)).length;
+    document.querySelector(`[data-count="${g.key}"]`).textContent = `${d} / ${g.items.length}`; });
+  $("doneCount").textContent = done.size;
+  $("barFill").style.width = (100 * done.size / items.length) + "%";
+  $("doneMarks").innerHTML = items.filter(it => done.has(it.n)).map(it => { const [x, y, w, h] = it.box;
+    return `<rect class="done-mark" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"></rect>`; }).join("");
+  const target = $("target");
+  if (next) { setBox(target, next); target.hidden = false; } else { target.hidden = true; }
+  if (scroll && next) {
+    // Scroll only the list: the next part near the top, with one finished row above it
+    const list = $("list"), r = $("row" + next.n).getBoundingClientRect(), l = list.getBoundingClientRect();
+    const top = list.scrollTop + r.top - l.top - 44;
+    list.scrollTo({ top: Math.max(0, top), behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+}
+
+$("list").addEventListener("click", e => {
+  const row = e.target.closest(".row"); if (!row) return;
+  const n = +row.dataset.n, wasNext = row.classList.contains("is-next");
+  done.has(n) ? done.delete(n) : done.add(n);
+  save(); render(wasNext && done.has(n));   // scroll only when the highlighted part is ticked
+});
+$("list").addEventListener("mouseover", e => {
+  const row = e.target.closest(".row"), pv = $("preview");
+  if (!row || row.classList.contains("is-next")) { pv.hidden = true; return; }
+  setBox(pv, items.find(it => it.n === +row.dataset.n)); pv.hidden = false;
+});
+$("list").addEventListener("mouseleave", () => { $("preview").hidden = true; });
+
+// Reset progress: a second click within 3 s confirms
+let armed = 0;
+const resetLabel = b => { b.textContent = "Reset progress"; b.classList.remove("armed"); };
+$("resetBtn").onclick = () => {
+  const b = $("resetBtn");
+  if (Date.now() - armed < 3000) { done.clear(); save(); render(true); resetLabel(b); armed = 0; return; }
+  armed = Date.now(); b.textContent = "Click again to reset"; b.classList.add("armed");
+  setTimeout(() => { if (Date.now() - armed >= 3000) resetLabel(b); }, 3100);
+};
+
+layout();
+addEventListener("resize", () => { layout(); });
+if (document.fonts) document.fonts.ready.then(layout);
+render(true);
+</script>
