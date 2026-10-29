@@ -1,6 +1,6 @@
 # Carrier Rev 2 — Soldering Guide
 
-Rev 2 board, 2026-10-28. Interactive version: `rev2_soldering_guide.html` (serve it with `python3 docs/serve.py`).
+Rev 2 board, 2026-10-28. Interactive version: https://yahya-tamur.github.io/blinds/soldering-guide/ (locally: `python3 docs/serve.py`).
 
 Solder the 45 parts in number order: lowest and smallest first, so the board lies flat while you work. Colours mark the stages: red = 0805 resistors and capacitors, blue = diodes, fuse, MOSFET and C4, green = through-hole parts and connectors, purple = sockets and the LM2596.
 

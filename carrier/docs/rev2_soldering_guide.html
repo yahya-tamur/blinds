@@ -1,5 +1,9 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Carrier Rev 2 Soldering</title>
-<meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
@@ -29,6 +33,10 @@
   --next: #f0b23a; --next-soft: #3a2f17; --done-ink: #5e6762; color-scheme: dark }
 
 html, body { height: 100%; overflow: hidden; }
+:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font: 15px/1.4 var(--font-body); }
 .app { height: 100%; box-sizing: border-box; display: grid; gap: 10px 14px;
        padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
@@ -93,6 +101,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .btn.small { padding: 2px 8px; font-size: .82rem; margin-left: 8px; vertical-align: 1px; }
 .btn.armed { border-color: var(--g-red); color: var(--g-red); }
 </style>
+</head>
+<body>
 
 <div class="app side" id="app">
   <div class="head" id="head">
@@ -206,3 +216,5 @@ addEventListener("resize", () => { layout(); });
 if (document.fonts) document.fonts.ready.then(layout);
 render(true);
 </script>
+</body>
+</html>
