@@ -9,12 +9,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap">
 <style>
-/* Same palette as the soldering checklist */
-:root { --bg: #f4f5f1; --surface: #ffffff; --ink: #1c2320; --muted: #66706b; --line: #dde1da; --accent: #e09a12;
-        --font: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif; color-scheme: light; }
-@media (prefers-color-scheme: dark) {
-  :root { --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e; --accent: #f0b23a; color-scheme: dark; }
-}
+/* Same palette as the soldering checklist (dark only) */
+:root { --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e; --accent: #f0b23a;
+        --font: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif; color-scheme: dark; }   /* always dark */
 body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 var(--font); }
 main { max-width: 36rem; margin: 0 auto; padding: 48px max(16px, env(safe-area-inset-left, 0px)); }
 h1 { font-size: 1.5rem; margin: 0 0 4px; }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Carrier Rev 2 Soldering</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="../favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=JetBrains+Mono:wght@500&display=swap">
@@ -13,25 +13,20 @@
    checklist or above it, whichever gives the bigger picture while the list keeps a readable minimum
    (about 240 px wide beside it, or the next part plus two rows below it). Leftover space goes to the list. */
 :root {
-  --bg: #f4f5f1;         /* bench paper, faint green bias toward the solder mask */
-  --surface: #ffffff;
-  --ink: #1c2320;
-  --muted: #66706b;
-  --line: #dde1da;
-  --next: #e09a12;       /* the one thing to look at: the next part */
-  --next-soft: #fbefd4;
-  --done-ink: #9aa29d;
+  --bg: #121614;         /* always dark: near-black with a faint green bias toward the solder mask */
+  --surface: #1a1f1c;
+  --ink: #e5e9e3;
+  --muted: #98a29c;
+  --line: #2b322e;
+  --next: #f0b23a;       /* the one thing to look at: the next part */
+  --next-soft: #3a2f17;
+  --done-ink: #5e6762;
+  color-scheme: dark;
   --g-red: #d64834; --g-blue: #286ec8; --g-green: #28965a; --g-purple: #8250aa;   /* badge colours on the picture */
   --font-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
   --imgw: 600px; --imgh: 505px;   /* set by the script */
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e;
-  --next: #f0b23a; --next-soft: #3a2f17; --done-ink: #5e6762; color-scheme: dark } }
-:root[data-theme="dark"] {
-  --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e;
-  --next: #f0b23a; --next-soft: #3a2f17; --done-ink: #5e6762; color-scheme: dark }
 
 html, body { height: 100%; overflow: hidden; }
 :root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); box-sizing: border-box; }
@@ -59,7 +54,8 @@ h1 { font-size: 1rem; margin: 0; text-wrap: balance; }
 .pic { grid-area: pic; position: relative; width: var(--imgw); height: var(--imgh); justify-self: center; align-self: start;
        border-radius: 6px; overflow: hidden; }
 .pic img, .pic svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.pic .done-mark { fill: rgba(0,0,0,.55); }
+#doneMarks { opacity: .55; }      /* one translucent layer, so overlapping shapes do not darken twice */
+.pic .done-mark { fill: #000; }
 .pic .target { fill: none; stroke: var(--next); stroke-width: 7; }
 .pic .target.pulse { animation: pulse 1.4s ease-in-out infinite; }
 .pic .preview { fill: none; stroke: #ffffff; stroke-width: 5; stroke-dasharray: 14 10; }
@@ -178,7 +174,9 @@ function render(scroll) {
   $("doneCount").textContent = done.size;
   $("barFill").style.width = (100 * done.size / items.length) + "%";
   $("doneMarks").innerHTML = items.filter(it => done.has(it.n)).map(it => { const [x, y, w, h] = it.box;
-    return `<rect class="done-mark" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"></rect>`; }).join("");
+    // the cover spans the part's outline plus its number badge, which is taller than a small 0805 part
+    return `<rect class="done-mark" x="${x}" y="${y}" width="${w}" height="${h}" rx="6"></rect>` +
+           `<circle class="done-mark" cx="${x + w / 2}" cy="${y + h / 2}" r="20"></circle>`; }).join("");
   const target = $("target");
   if (next) { setBox(target, next); target.hidden = false; } else { target.hidden = true; }
   if (scroll && next) {

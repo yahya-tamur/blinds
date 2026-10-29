@@ -24,9 +24,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 carrier/docs/build_site.py _site
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v3   # carrier/docs is laid out exactly like the site
         with:
-          path: _site
+          path: carrier/docs
       - id: deployment
         uses: actions/deploy-pages@v4
