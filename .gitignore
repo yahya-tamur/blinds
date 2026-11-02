@@ -3,7 +3,6 @@ arduino/arduino_secrets.h
 carrier/firmware/build/
 carrier/firmware/main/secrets.h
 carrier/pcb/*
-!carrier/pcb/enclosure/
 # v0.2.0 KiCad project files (enough to open the board and plot the Gerbers)
 !carrier/pcb/boards/
 carrier/pcb/boards/*
