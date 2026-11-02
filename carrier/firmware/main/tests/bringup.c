@@ -12,9 +12,9 @@
 #include "tests.h"
 
 // Bring-up test for a newly built board: checks every part in turn and ends with a pass/fail list.
-// Automatic checks first (RTC, driver, idle levels), then steps that need a hand (switch, remote,
-// magnets; each waits up to PROMPT_S seconds), then the relay and a short motor move, about two minutes
-// in all; watch it with idf.py monitor. The switch answers the yes/no questions: up = yes.
+// The RTC checks itself, then come the steps that need a hand (switch, remote, magnets; each waits up to
+// PROMPT_S seconds), then the driver and a short motor move through the relay: about two minutes in all;
+// watch it with idf.py monitor. The switch answers the yes/no questions: up = yes.
 
 #define PROMPT_S     20
 #define DS3231_ADDR  0x68
@@ -26,6 +26,7 @@
 static const char *names[16];
 static int results[16];          // 1 pass, 0 fail, -1 skipped
 static int n_checks;
+static int up_pos = 1;           // switch_now() value for "up": -1 if pushing up closes SW2
 
 static void report(const char *name, int result, const char *fmt, ...)
 {
@@ -153,7 +154,7 @@ static int ask(const char *question)
     wait_switch(0);
     for (int i = 0; i < PROMPT_S * 20; i++) {
         int p = switch_now();
-        if (p == 1 || p == -1) { wait_switch(0); return p == 1; }
+        if (p == 1 || p == -1) { wait_switch(0); return p == up_pos; }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     return -1;
@@ -172,20 +173,33 @@ static void check_inputs(void)
     int ir = gpio_get_level(PIN_IR);
     report("IR receiver at rest", ir == 1, ir ? "output high" : "output stuck low (U6 orientation, R4/C8, 3.3 V?)");
 
+    // Up first. The switch is symmetric, so which contact closes depends only on the board (a toggle closes the
+    // contact on the side away from the lever); if it is SW2, the firmware's setting is the wrong way round.
     printf(">>> Push the switch UP and hold it...\n");
-    bool up = wait_switch(1);
-    report("Switch up", up, up ? "SW1 (GPIO13) closed" : "not seen in %d s", PROMPT_S);
+    int first = 0;
+    for (int i = 0; i < PROMPT_S * 20 && (first == 0 || first == 2); i++) {
+        first = switch_now();
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+    if (first == -1) up_pos = -1;
+    report("Switch up", first == 1 || first == -1, first == 1 ? "SW1 (GPIO13) closed" : first == -1 ?
+           "SW2 (GPIO14) closed: swap SWITCH_UP_PIN and SWITCH_DOWN_PIN in app_config.h "
+           "(this test now counts SW2 as up)" : "not seen in %d s", PROMPT_S);
     printf(">>> Now push it DOWN and hold it...\n");
-    bool down = wait_switch(-1);
-    report("Switch down", down, down ? "SW2 (GPIO14) closed" : "not seen in %d s", PROMPT_S);
+    bool down = wait_switch(-up_pos);
+    report("Switch down", down, down ? (up_pos > 0 ? "SW2 (GPIO14) closed" : "SW1 (GPIO13) closed") :
+           "not seen in %d s", PROMPT_S);
     wait_switch(0);
 
     printf(">>> Point a remote at the receiver and press any button...\n");
     int r = -1;
-    for (int64_t until = xTaskGetTickCount() + pdMS_TO_TICKS(PROMPT_S * 1000); r <= 0 && xTaskGetTickCount() < until;)
+    bool other = false;                          // frames that were not NEC
+    for (int64_t until = xTaskGetTickCount() + pdMS_TO_TICKS(PROMPT_S * 1000); r <= 0 && xTaskGetTickCount() < until;) {
         r = ir_receive(1000);
+        other |= r == 0;
+    }
     report("IR remote", r > 0, r > 0 ? "NEC code received (address above; IR_ADDRESS in app_config.h)" :
-           r == 0 ? "frames seen but none decoded as NEC (other protocol, or a weak signal)" : "nothing received");
+           other ? "frames seen but none decoded as NEC (other protocol, or a weak signal)" : "nothing received");
 }
 
 static void check_hall(void)
@@ -223,22 +237,22 @@ static uint32_t move_and_read(int dir, int ms)
     return s;
 }
 
-static void relay(int on)
+// Disconnects the motor; only with EN high, so the contacts never carry coil current. That the relay really opens
+// is checked by hand with the board unplugged (the soldering guide's last step: spinning the motor lights nothing).
+static void relay_off(void)
 {
-    // Only ever switched with EN high, so the contacts never carry coil current
     vTaskDelay(pdMS_TO_TICKS(RELAY_SETTLE_MS));
-    gpio_set_level(PIN_RELAY, on);
-    vTaskDelay(pdMS_TO_TICKS(RELAY_SETTLE_MS));
+    gpio_set_level(PIN_RELAY, 0);
 }
 
 static void check_motor(void)
 {
-    step_init();                                 // EN high, relay on: turn it off again for the first check
-    gpio_set_level(PIN_RELAY, 0);
+    step_init();                                 // EN high, then the relay on
     tmc_uart_init();
     if (!tmc_setup(16, BRINGUP_IRMS)) {
+        relay_off();
         report("Driver answers", 0, "no UART reply: 24 V plugged in? U4 orientation, R3, GPIO17/18");
-        report("Relay off", -1, "no driver");
+        report("Relay on, coils connected", -1, "no driver");
         report("Motor turns", -1, "no driver");
         return;
     }
@@ -248,18 +262,11 @@ static void check_motor(void)
     // Open load is only reported in SpreadCycle: same GCONF as tmc_setup, plus en_SpreadCycle (bit 2)
     tmc_write(TMC_GCONF, (1u << 2) | (1u << 6) | (1u << 7) | (1u << 8));
 
-    printf("Moving with the relay OFF: the driver should find both coils open (the motor must not move)...\n");
-    uint32_t s = move_and_read(0, 1000);
-    report("Relay off", s != 0xFFFFFFFF && (s & DRV_OLA) && (s & DRV_OLB),
-           "DRV_STATUS 0x%08X:%s%s (expect open load on both: the relay disconnects the motor)", (unsigned)s,
-           (s & DRV_OLA) ? " open A" : "", (s & DRV_OLB) ? " open B" : "");
-
-    relay(1);
     printf("Moving with the relay ON: half a turn one way, then back...\n");
     uint32_t s1 = move_and_read(0, 4000);
     vTaskDelay(pdMS_TO_TICKS(300));
     uint32_t s2 = move_and_read(1, 4000);
-    relay(0);
+    relay_off();
     uint32_t bad = (s1 | s2) & (DRV_OLA | DRV_OLB | DRV_FAULTS);
     report("Relay on, coils connected", s1 != 0xFFFFFFFF && s2 != 0xFFFFFFFF && !bad,
            "DRV_STATUS 0x%08X / 0x%08X%s", (unsigned)s1, (unsigned)s2,
@@ -271,10 +278,8 @@ static void check_motor(void)
 void test_bringup(void)
 {
     printf("\n==== Carrier bring-up test ====\n"
-           "Multimeter checks before the DevKit and StepStick go on (24 V adapter in, black probe on GND):\n"
-           "+24V (C4 +) about 24 V, so Q1 conducts; 5V_BUCK (C16 +) 5.1-5.5 V, +5V (D4 band) 4.8-5.5 V.\n"
-           "With the DevKit on: its 3V3 pin 3.2-3.4 V.\n"
-           "Plug in the 24 V adapter and the motor; have a remote and a magnet at hand.\n\n");
+           "Do the soldering guide's power checks first. Then plug in the motor and the 24 V supply;\n"
+           "have a remote and a magnet at hand.\n\n");
     vTaskDelay(pdMS_TO_TICKS(2000));
     check_rtc();
     check_inputs();

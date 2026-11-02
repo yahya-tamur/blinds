@@ -2,7 +2,7 @@
 
 v0.2.0 board (80.1 × 58.8 mm), 2026-11-01. Interactive version: this folder's `index.html` (on the site: `soldering-guide-v0.2.0/`).
 
-Solder the 40 parts in number order, with two multimeter checks of the power supply on the way. The back goes first, while both sides are still flat: the small 0805 parts (red), then the chips and diodes (blue). Then the front: the low SMD parts (green), the through-hole parts (purple), the two modules (amber), and the Hall sensors last, back on the back (teal). The back picture is drawn as you see it when soldering the back, so it is mirrored left-right; directions for back parts refer to that picture.
+Solder the 40 parts in number order, with two multimeter checks of the power supply on the way and a relay check at the end. The back goes first, while both sides are still flat: the small 0805 parts (red), then the chips and diodes (blue). Then the front: the low SMD parts (green), the through-hole parts (purple), the two modules (amber), and the Hall sensors last, back on the back (teal). The back picture is drawn as you see it when soldering the back, so it is mirrored left-right; directions for back parts refer to that picture.
 
 ![Front, numbered](v0.2.0_front.png)
 
@@ -68,9 +68,9 @@ Solder the 40 parts in number order, with two multimeter checks of the power sup
 
 ### Power check (24 V in)
 
-Before the modules go on, check the power supply, so a fault can't reach the DevKit. Plug the 24 V supply's cord into J1. Set the multimeter to DC volts, keep the black probe on ground (C4's striped − pad) and touch the red probe to each point:
+Check the power supply before the modules go on, while a wrong voltage can't damage them yet. Plug the 24 V supply's cord into J1. Set the multimeter to DC volts, keep the black probe on ground (C4's striped − pad) and touch the red probe to each point:
 
-| # | Red probe | Reading |
+| # | Check | Expect |
 | --- | --- | --- |
 | 37 | C4's + pad | ≈ 24 V |
 | 38 | C16's + pad | 5.1–5.5 V |
@@ -93,11 +93,11 @@ Unplug the cord before you solder the modules. If a reading was off:
 
 Plug the cord into J1 again. Black probe on ground, red probe on:
 
-| # | Red probe | Reading |
+| # | Check | Expect |
 | --- | --- | --- |
 | 42 | DevKit's 3V3 pin (top left) | 3.2–3.4 V |
 
-Unplug the cord before you go on. If the reading is low, or the DevKit gets warm, unplug at once: look for a short on the 3.3 V parts (U5, U6, U7, U8) or a solder bridge on the DevKit's pins.
+Unplug the cord before you go on. If the reading is low, or the DevKit gets warm, unplug at once: look for a short on the 3.3 V parts (U5, U6, C6, C7) or a solder bridge on the DevKit's pins.
 
 ### Back: Hall sensors
 
@@ -105,5 +105,19 @@ Unplug the cord before you go on. If the reading is low, or the DevKit gets warm
 | --- | --- | --- | --- |
 | 43 | Hall sensor A (top) (U7) | C111925 | Insert into enclosure, then put board on top to get the right pin length. Chamfered side facing left. |
 | 44 | Hall sensor B (bottom) (U8) | C111925 | Same as U7 |
+
+### Relay check (nothing plugged in)
+
+Last, check that the motor relay keeps the motor disconnected when the board is off. Plug the motor into J2, with the 24 V cord and USB unplugged.
+
+| # | Check | Expect |
+| --- | --- | --- |
+| 45 | Spin the motor shaft quickly by hand | DevKit LEDs stay off |
+
+If a DevKit LED lights, the spinning motor is powering the board through the driver, so K1 isn't opening: check that K1 is the right way round (pin 1 at the top) and for solder bridges between its pins.
+
+### Coin cell
+
+Put a CR2032 in BT1, + side up, before running the firmware's bring-up test. The cell keeps the clock running while the board is off: the test sets the clock on its first run, and on the next run (after a minute or more with the board unplugged) checks that it kept time.
 
 Also: trim the module pins and the through-hole leads on the back to about 2 mm, so the back stays flat against its standoffs.
