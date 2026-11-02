@@ -1,4 +1,4 @@
-// The 3-position switch and the IR remote. Both post commands with event_post().
+// The momentary switch and the IR remote. Both post commands with event_post().
 #pragma once
 
 void switch_init(void);

@@ -17,3 +17,6 @@ CLAUDE.md
 
 # Old soldering guide for the dropped J4 design (was "rev 2", later "rev 3"); kept locally, to be deleted later
 carrier/docs/soldering-guide/
+
+# Claude Code settings and preview launchers (local only)
+.claude/

@@ -57,7 +57,7 @@ void clock_init(void)
         .scl_io_num = PIN_SCL,
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = false,   // the module has 4.7k pull-ups
+        .flags.enable_internal_pullup = false,   // 4.7k pull-ups on the board
     };
     i2c_master_bus_handle_t bus;
     ESP_ERROR_CHECK(i2c_new_master_bus(&bus_cfg, &bus));

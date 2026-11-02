@@ -6,22 +6,19 @@
 #define APP_TZ            "PST8PDT,M3.2.0,M11.1.0"
 #define APP_HOSTNAME      "blinds"
 
-// Which switch contact means "up". The switch is a 3-position toggle: SW1 / off / SW2.
+// Which switch contact means "up". The switch is a momentary (ON)-OFF-(ON) toggle: SW1 / off / SW2.
 #define SWITCH_UP_PIN     PIN_SW1
 #define SWITCH_DOWN_PIN   PIN_SW2
 #define SWITCH_SETTLE_MS  30      // a position must read the same this long to count
 
 // IR remote (NEC). IR_ADDRESS -1 accepts any remote; set it to the remote's address
-// (shown by test_ir) so other remotes in the house are ignored.
+// (shown by test_bringup) so other remotes in the house are ignored.
 #define IR_ADDRESS        -1
 #define IR_CMD_UP         0x07
 #define IR_CMD_DOWN       0x15
 #define IR_CMD_CANCEL     0x09
 
 #define MAX_ALARMS        20
-
-// Length of a run while the motor is simulated (see motor_sim.c)
-#define SIM_RUN_MS        65500
 
 // Motor runs (motor_steps.c), no planned stops yet. These match the Arduino version: 833 steps/s at
 // 1/8 microstepping for 60 s of cruising = 31.24 motor revolutions at 0.52 rev/s, speeding up and

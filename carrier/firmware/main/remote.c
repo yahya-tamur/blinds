@@ -1,9 +1,10 @@
-// NEC IR remote on the RMT peripheral (same decoding as test_ir.c). Repeat frames sent while a button
+// NEC IR remote on the RMT peripheral (same decoding as tests/ir.c). Repeat frames sent while a button
 // is held are ignored, so holding a button counts as one press.
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include "driver/rmt_rx.h"
 #include "esp_err.h"
 #include "esp_log.h"
@@ -51,6 +52,7 @@ static void remote_task(void *arg)
     };
     rmt_channel_handle_t rx;
     ESP_ERROR_CHECK(rmt_new_rx_channel(&cfg, &rx));
+    gpio_pullup_en(PIN_IR);                       // helps the receiver's weak built-in pull-up
     QueueHandle_t q = xQueueCreate(1, sizeof(rmt_rx_done_event_data_t));
     rmt_rx_event_callbacks_t cbs = { .on_recv_done = on_rx_done };
     ESP_ERROR_CHECK(rmt_rx_register_event_callbacks(rx, &cbs, q));

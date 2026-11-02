@@ -2,7 +2,8 @@
 // stop after a fixed number of steps, then a short pause and a ramped back-off the other way (also
 // after a cancel, which brakes as hard as the acceleration allows). A GPTimer interrupt times every
 // step, so web traffic can't disturb the pace. The driver is set up before every run, since it forgets
-// its settings whenever the 24 V supply is cut.
+// its settings whenever the 24 V supply is cut. The relay connects the motor only for the run (board.h has
+// the order), so between runs the coils are open and turning the blinds by hand can't pump the 24 V rail.
 //
 // Speed profile: like the Arduino, v^2 changes by 2a on every step, so the speed after k steps of
 // speeding up is sqrt(2ak). k is the ramp index: the step's speed comes from ramp_half_us[k], and k
@@ -11,6 +12,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/gptimer.h"
 #include "esp_log.h"
@@ -37,6 +39,7 @@ static volatile bool cancel_requested;
 static bool step_high;
 static int back_level;             // DIR level for the back-off
 static int dir;                    // what the application sees: 1, -1, or 0 once the run is over
+static bool ending;                // check_ended is switching the driver and relay off
 static portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
 
 static void set_alarm(gptimer_handle_t t, uint32_t us)
@@ -102,10 +105,12 @@ static uint32_t move_us(uint32_t n, uint32_t k0)
 
 void motor_init(void)
 {
-    gpio_config_t out = { .pin_bit_mask = (1ULL << PIN_MOT_EN) | (1ULL << PIN_DIR) | (1ULL << PIN_STEP),
+    gpio_config_t out = { .pin_bit_mask = (1ULL << PIN_MOT_EN) | (1ULL << PIN_DIR) | (1ULL << PIN_STEP) |
+                                          (1ULL << PIN_RELAY),
                           .mode = GPIO_MODE_OUTPUT };
     ESP_ERROR_CHECK(gpio_config(&out));
     gpio_set_level(PIN_MOT_EN, 1);   // driver off between runs
+    gpio_set_level(PIN_RELAY, 0);    // motor disconnected between runs
     gpio_set_level(PIN_STEP, 0);
     tmc_uart_init();
 
@@ -148,6 +153,8 @@ void motor_run(int d)
     int level = d > 0 ? MOTOR_UP_DIR : !MOTOR_UP_DIR;
     gpio_set_level(PIN_DIR, level);
     back_level = !level;
+    gpio_set_level(PIN_RELAY, 1);    // connect the motor while the driver is still off
+    vTaskDelay(pdMS_TO_TICKS(RELAY_SETTLE_MS));
     gpio_set_level(PIN_MOT_EN, 0);
     step_high = false;
     cancel_requested = false;
@@ -166,22 +173,38 @@ void motor_cancel(void)
     cancel_requested = true;   // brakes to a stop; the back-off still happens
 }
 
-// Switches the driver off once the run is over (no holding torque, as in the Arduino version).
-// Called by everything that asks about the motor, so whoever notices first does it.
+// Switches the driver off and disconnects the motor once the run is over (no holding torque, as in the
+// Arduino version). Called by everything that asks about the motor, so whoever notices first does it.
+// The run counts as going on until the relay is off, so a new run can't start in the meantime.
 static void check_ended(void)
 {
     bool ended = false;
     taskENTER_CRITICAL(&lock);
-    if (phase == IDLE && dir != 0) {
-        dir = 0;
+    if (phase == IDLE && dir != 0 && !ending) {
+        ending = true;
         ended = true;
     }
     taskEXIT_CRITICAL(&lock);
     if (ended) {
         gptimer_stop(timer);
         gpio_set_level(PIN_MOT_EN, 1);
+        vTaskDelay(pdMS_TO_TICKS(RELAY_SETTLE_MS));   // let the coil current die away before the contacts open
+        gpio_set_level(PIN_RELAY, 0);
+        taskENTER_CRITICAL(&lock);
+        dir = 0;
+        ending = false;
+        taskEXIT_CRITICAL(&lock);
         ESP_LOGI(TAG, "Run ended");
     }
+}
+
+bool motor_finishing(void)
+{
+    check_ended();
+    phase_t p = phase;
+    if (p == PAUSING || p == BACKING_OFF) return true;
+    if (p == RUNNING) return cancel_requested || left <= k;   // braking or slowing down to the planned stop
+    return dir != 0;                                          // stopped, relay still being switched off
 }
 
 uint32_t motor_remaining_ms(void)

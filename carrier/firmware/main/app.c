@@ -1,5 +1,6 @@
 // Startup, and the control task: the one place that decides what the motor does. Every input posts
-// commands to its queue; up or down starts a run unless one is going, cancel ends it.
+// commands to its queue; up or down starts a run unless one is going, cancel ends it. Once a run is
+// ending (slowing down to its stop, or the pause and back-off) every command is ignored.
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -32,6 +33,10 @@ static const char *source_name(source_t s)
 
 static void handle(event_t ev)
 {
+    if (motor_finishing()) {
+        ESP_LOGD(TAG, "Run ending, ignored a command from %s", source_name(ev.source));
+        return;
+    }
     if (ev.cmd == CMD_CANCEL) {
         if (motor_running()) {
             motor_cancel();
@@ -39,8 +44,15 @@ static void handle(event_t ev)
         }
         return;
     }
-    // Up or down while a run is going is ignored, as in the Arduino version
-    if (motor_running()) return;
+    if (motor_running()) {
+        // The switch the other way stops the run; the same way, or up or down from anything else
+        // (as in the Arduino version), is ignored
+        if (ev.source == SRC_SWITCH && (ev.cmd == CMD_UP ? 1 : -1) != motor_dir()) {
+            motor_cancel();
+            ESP_LOGI(TAG, "Stopped by the switch");
+        }
+        return;
+    }
     ESP_LOGI(TAG, "%s from %s", ev.cmd == CMD_UP ? "Up" : "Down", source_name(ev.source));
     motor_run(ev.cmd == CMD_UP ? 1 : -1);
 }

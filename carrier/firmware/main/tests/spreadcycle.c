@@ -18,7 +18,8 @@ void test_spreadcycle(void)
 {
     gpio_config_t sw = {
         .pin_bit_mask = (1ULL << PIN_SW1) | (1ULL << PIN_SW2),
-        .mode = GPIO_MODE_INPUT,                 // 10k pull-ups are on the board
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,        // no pull-ups on the board
     };
     ESP_ERROR_CHECK(gpio_config(&sw));
     step_init();                                 // EN high: driver off
