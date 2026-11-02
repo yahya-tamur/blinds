@@ -13,8 +13,8 @@
 
 // Bring-up test for a newly built board: checks every part in turn and ends with a pass/fail list.
 // Automatic checks first (RTC, driver, idle levels), then steps that need a hand (switch, remote,
-// magnets; each waits up to PROMPT_S seconds), then the relay and a short motor move. Read the output
-// with tools/readlog.py for about two minutes. The switch answers the yes/no questions: up = yes.
+// magnets; each waits up to PROMPT_S seconds), then the relay and a short motor move, about two minutes
+// in all; watch it with idf.py monitor. The switch answers the yes/no questions: up = yes.
 
 #define PROMPT_S     20
 #define DS3231_ADDR  0x68
