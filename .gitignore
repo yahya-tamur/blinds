@@ -4,5 +4,16 @@ carrier/firmware/build/
 carrier/firmware/main/secrets.h
 carrier/pcb/*
 !carrier/pcb/enclosure/
+# v0.2.0 KiCad project files (enough to open the board and plot the Gerbers)
+!carrier/pcb/boards/
+carrier/pcb/boards/*
+!carrier/pcb/boards/v0.2.0/
+carrier/pcb/boards/v0.2.0/*
+!carrier/pcb/boards/v0.2.0/carrier.kicad_pro
+!carrier/pcb/boards/v0.2.0/carrier.kicad_sch
+!carrier/pcb/boards/v0.2.0/carrier.kicad_pcb
 carrier/firmware/sdkconfig
 CLAUDE.md
+
+# Old soldering guide for the dropped J4 design (was "rev 2", later "rev 3"); kept locally, to be deleted later
+carrier/docs/soldering-guide/
