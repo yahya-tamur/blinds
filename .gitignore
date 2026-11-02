@@ -11,6 +11,10 @@ carrier/pcb/boards/v0.2.0/*
 !carrier/pcb/boards/v0.2.0/carrier.kicad_pro
 !carrier/pcb/boards/v0.2.0/carrier.kicad_sch
 !carrier/pcb/boards/v0.2.0/carrier.kicad_pcb
+# v0.2.0 assembly STL for designing the enclosure (the rest of manufacturing/ stays local)
+!carrier/pcb/boards/v0.2.0/manufacturing/
+carrier/pcb/boards/v0.2.0/manufacturing/*
+!carrier/pcb/boards/v0.2.0/manufacturing/carrier_v0.2.0_assembly.stl
 carrier/firmware/sdkconfig
 CLAUDE.md
 
