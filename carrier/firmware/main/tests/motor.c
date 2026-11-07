@@ -1,4 +1,4 @@
-// STEP pulse helpers for the motor tests (bringup, stallguard, spreadcycle).
+// STEP pulse helpers for the motor tests (bringup and the local ones).
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"

@@ -23,8 +23,8 @@
 #define TMC_ADDR     0       // MS1 = MS2 = GND
 #define TMC_RSENSE   0.11f   // BTT TMC2209 V1.3 sense resistors, ohms
 
-// StepperOnline 17HS19-2004S1: 2.0 A/phase, 1.6 ohm, 59 Ncm holding torque.
-// 1.7 A RMS (~85 % of rating, close to this driver's 1.77 A ceiling) for short bursts of motion.
+// YEJMKJ 60 mm NEMA 17: 2.3 A/phase, 1.5 ohm, 2.8 mH, 84 Ncm holding torque.
+// 1.7 A RMS (~75 % of rating, close to this driver's 1.77 A ceiling) for short bursts of motion.
 // Hold current is a quarter of that; disable the driver (EN high) between moves if nothing needs holding.
 // The relay only switches while EN is high, so its contacts never break the coil current:
 // EN high, relay on, RELAY_SETTLE_MS, EN low ... run ... EN high, RELAY_SETTLE_MS, relay off.

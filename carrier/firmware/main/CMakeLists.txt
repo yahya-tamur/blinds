@@ -1,6 +1,8 @@
+# Local, setup-specific tests (firmware/local/tests/, git-ignored): built when present
+file(GLOB LOCAL_TESTS "${CMAKE_CURRENT_LIST_DIR}/../local/tests/*.c")
+
 idf_component_register(
-    SRCS "main.c" "tmc2209.c" "tests/bringup.c" "tests/ir.c" "tests/motor.c" "tests/hall.c"
-         "tests/stallguard.c" "tests/spreadcycle.c" "tests/hall_motor.c"
+    SRCS ${LOCAL_TESTS} "main.c" "tmc2209.c" "tests/bringup.c" "tests/ir.c" "tests/motor.c" "tests/hall.c"
          "app.c" "logbuf.c" "motor_steps.c" "switch_input.c" "remote.c" "clock.c" "alarms.c" "wifi.c" "web.c"
     INCLUDE_DIRS "."
     EMBED_TXTFILES "../web/index.html" "../web/moving.html" "../web/style.css" "../web/favicon.svg"

@@ -23,3 +23,6 @@ carrier/docs/soldering-guide/
 
 # Claude Code settings and preview launchers (local only)
 .claude/
+
+# Setup-specific firmware tests, their runner scripts and measurements: kept local
+carrier/firmware/local/

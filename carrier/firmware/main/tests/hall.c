@@ -10,10 +10,10 @@
 // Hall sensors for the tests: two SS460S latches on PIN_HALL_A / PIN_HALL_B, open collector,
 // output low (ON) while a south pole faces the branded face, released by a north pole.
 // A PCNT unit counts quadrature in hardware (both directions, both edges of both sensors):
-// with 12 alternating magnets the count goes 24 per sprocket turn (15 degrees each).
+// with 6 alternating magnets the count goes 12 per sprocket turn (30 degrees each).
 // v0.2.0 has 10k pull-ups on the board; the internal ones are on as well (v0.1.0 has none).
 
-// Sets up both sensor inputs and returns a running quadrature counter (also used by tests/hall_motor.c)
+// Sets up both sensor inputs and returns a running quadrature counter (also used by the local tests)
 pcnt_unit_handle_t hall_counter_init(void)
 {
     gpio_config_t io = {
