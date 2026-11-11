@@ -11,7 +11,8 @@
 <style>
 /* Layout: the page always fits the window. A script measures it and puts the board picture either beside the
    checklist or above it, whichever gives the bigger picture while the list keeps a readable minimum
-   (about 240 px wide beside it, or the next part plus two rows below it). Leftover space goes to the list. */
+   (about 240 px wide beside it, or the next part plus two rows below it). Leftover space goes to the list.
+   The divider between picture and list can be dragged (or moved with the arrow keys; double-click resets it). */
 :root {
   --bg: #121614;         /* always dark: near-black with a faint green bias toward the solder mask */
   --surface: #1a1f1c;
@@ -37,10 +38,27 @@ body { background: var(--bg); color: var(--ink); font: 15px/1.4 var(--font-body)
 .app { height: 100%; box-sizing: border-box; display: grid; gap: 10px 14px;
        padding-left: max(12px, env(safe-area-inset-left, 0px)); padding-right: max(12px, env(safe-area-inset-right, 0px));
        padding-block: 10px; }
-.app.side  { grid-template-columns: var(--imgw) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
-             grid-template-areas: "pic head" "pic list"; }
-.app.stack { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto var(--imgh) minmax(0, 1fr);
-             grid-template-areas: "head" "pic" "list"; }
+.app { --split: 14px; }
+.app.side  { column-gap: 0; grid-template-columns: var(--imgw) var(--split) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr);
+             grid-template-areas: "pic split head" "pic split list"; }
+.app.stack { row-gap: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto var(--imgh) var(--split) minmax(0, 1fr);
+             grid-template-areas: "head" "pic" "split" "list"; }
+.app.stack .head { margin-bottom: 10px; }
+
+/* the draggable divider: a grip in the gap, with a wider invisible hit area for fingers */
+.splitter { grid-area: split; position: relative; touch-action: none; display: flex; align-items: center; justify-content: center; outline: none; }
+.app.side .splitter { cursor: col-resize; }
+.app.stack .splitter { cursor: row-resize; }
+.splitter::before { content: ""; position: absolute; }
+.app.side .splitter::before { inset: 0 -6px; }
+.app.stack .splitter::before { inset: -8px 0; }
+.splitter::after { content: ""; border-radius: 2px; background: var(--line); transition: background .15s; }
+.app.side .splitter::after { width: 4px; height: 48px; }
+.app.stack .splitter::after { width: 48px; height: 4px; }
+.splitter:hover::after, .splitter:focus-visible::after, .app.dragging .splitter::after { background: var(--next); }
+.app.dragging { user-select: none; -webkit-user-select: none; }
+.app.dragging.side { cursor: col-resize; }
+.app.dragging.stack { cursor: row-resize; }
 
 .head { grid-area: head; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .head .top { display: flex; align-items: baseline; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; }
@@ -137,6 +155,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
     <div class="face" id="faceB" hidden><img src="v0.2.0_back.png" alt="v0.2.0 back, mirrored as seen when soldering it, with its parts numbered in soldering order">
       <svg viewBox="0 0 1550 1256" aria-hidden="true"><g class="done-layer" id="doneB"></g><rect id="previewB" class="preview" hidden></rect><rect id="targetB" class="target pulse" hidden></rect></svg></div>
   </div>
+  <div class="splitter" id="splitter" role="separator" tabindex="0" aria-label="Resize the picture" aria-controls="pic"
+       aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" title="Drag to resize; double-click to reset"></div>
   <section class="list" id="list" aria-label="Parts in soldering order" aria-live="polite"></section>
 </div>
 
@@ -171,16 +191,66 @@ $("list").innerHTML = GROUPS.map(g => g.blocks ? `
   </div>`).join("");
 
 // Pick the layout that gives the bigger picture, then size the picture box to its exact proportions.
+// A size the reader dragged the divider to is kept per layout, as a share of the space, and clamped to fit.
+const SPLIT = 14, GAP_Y = 10, PIC_MIN = 120, DRAG_LIST_MIN_W = 160, DRAG_LIST_MIN_H = 60;
+const SPLIT_KEY = KEY + "-split";
+let split = {};
+try { split = JSON.parse(localStorage.getItem(SPLIT_KEY) || "{}") || {}; } catch (e) {}
+const saveSplit = () => { try { localStorage.setItem(SPLIT_KEY, JSON.stringify(split)); } catch (e) {} };
+let L = {};     // the last layout, for the divider
 function layout() {
   const app = $("app"), cs = getComputedStyle(app);
   const W = app.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const H = app.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
-  const gapX = parseFloat(cs.columnGap) || 14, gapY = parseFloat(cs.rowGap) || 10, headH = $("head").offsetHeight;
-  const sideW = Math.max(0, Math.min(W - LIST_MIN_W - gapX, H * ASPECT));
-  const stackW = Math.max(0, Math.min(W, (H - headH - LIST_MIN_H - 2 * gapY) * ASPECT));
-  const side = sideW >= stackW, w = Math.floor(side ? sideW : stackW);
+  const headH = $("head").offsetHeight;
+  const sideW = Math.max(0, Math.min(W - LIST_MIN_W - SPLIT, H * ASPECT));
+  const stackW = Math.max(0, Math.min(W, (H - headH - LIST_MIN_H - GAP_Y - SPLIT) * ASPECT));
+  const side = sideW >= stackW, mode = side ? "side" : "stack";
+  // the space the picture shares with the list, along the divider's axis, and the picture's limits in it
+  const span = side ? W - SPLIT : H - headH - GAP_Y - SPLIT;
+  const maxW = side ? Math.min(W - DRAG_LIST_MIN_W - SPLIT, H * ASPECT)
+                    : Math.min(W, (span - DRAG_LIST_MIN_H) * ASPECT);
+  let w = side ? sideW : stackW;
+  if (typeof split[mode] === "number") w = side ? split[mode] * span : split[mode] * span * ASPECT;
+  w = Math.floor(Math.max(Math.min(PIC_MIN, maxW), Math.min(maxW, w)));
   app.classList.toggle("side", side); app.classList.toggle("stack", !side);
   app.style.setProperty("--imgw", w + "px"); app.style.setProperty("--imgh", Math.floor(w / ASPECT) + "px");
+  const sp = $("splitter"), ext = side ? w : w / ASPECT;
+  sp.setAttribute("aria-orientation", side ? "vertical" : "horizontal");
+  sp.setAttribute("aria-valuenow", Math.round(100 * ext / Math.max(1, span)));
+  L = { side, mode, span, ext };
+}
+
+// The divider: drag it, or focus it and use the arrow keys; double-click or Enter goes back to the automatic size
+function setExtent(px) {      // the picture's width (beside) or height (above) in pixels
+  split[L.mode] = px / Math.max(1, L.span); layout();
+  split[L.mode] = L.ext / Math.max(1, L.span);   // store what fitted, so a later drag starts from what is seen
+}
+{
+  const sp = $("splitter"); let grab = 0;
+  sp.addEventListener("pointerdown", e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); sp.setPointerCapture(e.pointerId); sp.focus({ preventScroll: true });
+    const r = $("pic").getBoundingClientRect();
+    grab = L.side ? e.clientX - r.right : e.clientY - r.bottom;    // where in the divider it was taken
+    $("app").classList.add("dragging");
+  });
+  sp.addEventListener("pointermove", e => {
+    if (!sp.hasPointerCapture(e.pointerId)) return;
+    const r = $("pic").getBoundingClientRect();
+    setExtent(L.side ? e.clientX - grab - r.left : e.clientY - grab - r.top);
+  });
+  const end = e => { if (!sp.hasPointerCapture(e.pointerId)) return;
+    sp.releasePointerCapture(e.pointerId); $("app").classList.remove("dragging"); saveSplit(); };
+  sp.addEventListener("pointerup", end); sp.addEventListener("pointercancel", end);
+  const reset = () => { delete split[L.mode]; saveSplit(); layout(); };
+  sp.addEventListener("dblclick", reset);
+  sp.addEventListener("keydown", e => {
+    const step = e.shiftKey ? 64 : 16;
+    const d = { ArrowLeft: L.side ? -step : 0, ArrowRight: L.side ? step : 0, ArrowUp: L.side ? 0 : -step, ArrowDown: L.side ? 0 : step }[e.key];
+    if (d) { e.preventDefault(); setExtent(L.ext + d); saveSplit(); }
+    else if (e.key === "Enter") { e.preventDefault(); reset(); }
+  });
 }
 
 const setBox = (el, it) => { const [x, y, w, h] = it.box, p = 10;
