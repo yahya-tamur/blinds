@@ -2,5 +2,6 @@
 CONFIG_IDF_TARGET="esp32s3"
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
-CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
+# PSRAM off: the firmware fits in internal RAM, and the v0.2.0 board's DevKit hangs once its PSRAM is started
+# (a fault inside that module; its twin on v0.1.0 passes). Re-enable with CONFIG_SPIRAM=y + CONFIG_SPIRAM_MODE_OCT=y.
+# CONFIG_SPIRAM is not set
