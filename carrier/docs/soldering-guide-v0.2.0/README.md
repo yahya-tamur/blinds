@@ -41,8 +41,8 @@ Solder the 40 parts in number order, with two multimeter checks of the power sup
 | 20 | DS3231 clock (SOIC-16) (U5) | C9866 | Pin 1 dot top-left |
 | 21 | 10 µF 50 V capacitor (1210) (C14) | C138687 | None |
 | 22 | SS14 diode (5 V path) (D4) | C2480 | Band (−) to the left |
-| 23 | SS16 diode (buck) (D5) | C2481 | Band (−) to the left |
-| 24 | SS14 diode (relay coil) (D6) | C2480 | Band (−) down |
+| 23 | SS14 diode (relay coil) (D6) | C2480 | Band (−) down |
+| 24 | SS16 diode (buck) (D5) | C2481 | Band (−) to the left |
 | 25 | 24 V TVS (SMB) (D1) | C83268 | Either way round (bidirectional) |
 | 26 | P-channel MOSFET (DPAK) (Q1) | C513222 | Big tab up, two legs down |
 
@@ -50,8 +50,8 @@ Solder the 40 parts in number order, with two multimeter checks of the power sup
 
 | # | Part | LCSC | Orientation |
 | --- | --- | --- | --- |
-| 27 | 3 A fuse (F1) | C178991 | None |
-| 28 | 68 µH inductor (L1) | C168091 | None |
+| 27 | 68 µH inductor (L1) | C168091 | None |
+| 28 | 3 A fuse (F1) | C178991 | None |
 | 29 | 220 µF 10 V capacitor (C16) | C7469982 | + pad on the left, black stripe (−) right |
 | 30 | 100 µF 50 V capacitor (C4) | C178548 | + pad on the left, black stripe (−) right |
 
