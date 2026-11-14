@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The controller serves plain HTTP on the home network (blinds.lan or its IP address).
+     Cleartext is allowed so the app can reach it; everything else stays HTTPS-only. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

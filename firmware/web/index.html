@@ -174,20 +174,47 @@ function alarmFields(a) {
   return { k: "recurring", m: a.minute, d: a.dir };
 }
 
+// In the Android app, the phone's next alarm (from its clock app) is listed too, in time order. The app
+// provides it as window.BlindsApp; in a browser there is none and nothing changes.
+function phoneAlarm() {
+  try {
+    const s = window.BlindsApp && window.BlindsApp.nextPhoneAlarm();
+    return s ? JSON.parse(s) : null;   // { at: Unix time }
+  } catch (e) {
+    return null;
+  }
+}
+const localDate = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+
 // Rebuilds the list when the controller's alarms differ from what's shown. Soonest first, by the next
 // time the controller worked out; sun alarms without a location (no next time) go last.
 let shownAlarms = null;
 function showAlarms(alarms, max) {
-  const key = JSON.stringify([alarms, today]);
+  const phone = phoneAlarm();
+  const key = JSON.stringify([alarms, today, phone]);
   if (key === shownAlarms) {
     return;
   }
   shownAlarms = key;
   const list = document.getElementById("alarms");
   const row = document.getElementById("alarm-row").content;
-  const sorted = [...alarms].sort((a, b) => (a.next ?? Infinity) - (b.next ?? Infinity));
+  const items = phone ? [...alarms, { phone: true, next: phone.at }] : [...alarms];
+  const sorted = items.sort((a, b) => (a.next ?? Infinity) - (b.next ?? Infinity));
   list.replaceChildren(...sorted.map(a => {
     const li = row.firstElementChild.cloneNode(true);
+    if (a.phone) {
+      // The phone's alarm, in the phone's local time; tapping it opens the clock app, which owns it
+      const d = new Date(a.next * 1000);
+      li.classList.add("phone");
+      li.querySelector(".alarm-time").textContent = formatMinute(d.getHours() * 60 + d.getMinutes());
+      li.querySelector(".alarm-sub").textContent = "Next phone alarm · " + dayLabel(localDate(d));   // only the next one
+      const badge = li.querySelector(".badge");
+      badge.textContent = "phone";
+      badge.classList.add("phone");
+      li.querySelector(".remove").style.visibility = "hidden";   // keeps the badges lined up; removed in the clock app
+      li.onclick = () => window.BlindsApp.openClock();
+      return li;
+    }
     const when = a.when ? splitWhen(a.when) : null;
     let time, sub;
     if (a.kind === "recurring") {
@@ -211,7 +238,7 @@ function showAlarms(alarms, max) {
     };
     return li;
   }));
-  document.getElementById("alarms-empty").hidden = alarms.length > 0;
+  document.getElementById("alarms-empty").hidden = alarms.length > 0 || phone !== null;
   document.getElementById("add-fieldset").disabled = alarms.length >= max;
 }
 

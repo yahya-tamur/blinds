@@ -1,0 +1,13 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/captures
+.kotlin
+# Release signing: passwords and the key's location (keystore.example.properties shows the format)
+/keystore.properties
+*.jks
+*.keystore

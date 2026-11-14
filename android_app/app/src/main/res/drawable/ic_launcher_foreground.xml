@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The website's icon (docs/favicon.svg, also served by the controller): a sun rising over the horizon.
+     Its 32-unit square is drawn over the 72 dp a launcher shows of the 108 dp adaptive icon, so the sun
+     and horizon stay inside the 66 dp safe zone. The navy square is the background (ic_launcher_background). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group android:translateX="18" android:translateY="18" android:scaleX="2.25" android:scaleY="2.25">
+        <path android:fillColor="#D6A04A" android:pathData="M9,22a7,7 0,0 1,14 0z" />
+        <path android:strokeColor="#D6A04A" android:strokeWidth="2.4" android:strokeLineCap="round"
+            android:pathData="M5,22h22 M16,12.5v-3.5 M22.7,15.3l2.5,-2.5 M9.3,15.3l-2.5,-2.5" />
+    </group>
+</vector>

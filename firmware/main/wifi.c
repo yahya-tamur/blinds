@@ -9,9 +9,7 @@
 #include "clock.h"
 #include "wifi.h"
 
-#if __has_include("secrets.h")
-#include "secrets.h"
-#endif
+#include "wifi_secrets.h"   // WIFI_SSID, WIFI_PASSWORD: generated from wifi.properties (main/CMakeLists.txt)
 
 static const char *TAG = "wifi";
 static volatile bool connected;
@@ -45,8 +43,8 @@ void wifi_start(void)
 {
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-#ifndef SECRET_SSID
-    ESP_LOGW(TAG, "No main/secrets.h: Wi-Fi is off (copy secrets.example.h to secrets.h and rebuild)");
+#ifndef WIFI_SSID
+    ESP_LOGW(TAG, "No ssid in wifi.properties: Wi-Fi is off (copy wifi.example.properties to wifi.properties and rebuild)");
 #else
     esp_netif_t *netif = esp_netif_create_default_wifi_sta();
     esp_netif_set_hostname(netif, APP_HOSTNAME);
@@ -55,12 +53,12 @@ void wifi_start(void)
     ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, on_event, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_event, NULL));
     wifi_config_t cfg = { 0 };
-    strlcpy((char *)cfg.sta.ssid, SECRET_SSID, sizeof cfg.sta.ssid);
-    strlcpy((char *)cfg.sta.password, SECRET_PASS, sizeof cfg.sta.password);
+    strlcpy((char *)cfg.sta.ssid, WIFI_SSID, sizeof cfg.sta.ssid);
+    strlcpy((char *)cfg.sta.password, WIFI_PASSWORD, sizeof cfg.sta.password);
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &cfg));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_LOGI(TAG, "Connecting to %s", SECRET_SSID);
+    ESP_LOGI(TAG, "Connecting to %s", WIFI_SSID);
 
     // SNTP keeps trying in the background and re-syncs every hour once connected
     esp_sntp_config_t sntp = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");

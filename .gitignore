@@ -4,10 +4,12 @@ CLAUDE.md
 # Claude Code settings and preview launchers (local only)
 .claude/
 
-# Firmware build output, local config and secrets
+# Wi-Fi network name and password for the firmware build (wifi.example.properties shows the format)
+wifi.properties
+
+# Firmware build output and local config
 firmware/build/
 firmware/sdkconfig
-firmware/main/secrets.h
 # Setup-specific firmware tests, their runner scripts and measurements: kept local
 firmware/local/
 

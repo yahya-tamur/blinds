@@ -1,31 +1,17 @@
 :root {
-  color-scheme: light dark;  /* scrollbars and other native bits follow the theme */
-  --bg: #f3f4f6;
-  --card: #ffffff;
-  --text: #1d2330;
-  --muted: #6b7280;
-  --line: #e5e7eb;
+  color-scheme: dark;  /* always dark, like the GitHub Pages site; scrollbars and other native bits match */
+  --bg: #111418;
+  --card: #1b2027;
+  --text: #e8eaed;
+  --muted: #9aa3ae;
+  --line: #2b323b;
   --up: #d6a04a;       /* muted sunrise orange-yellow */
   --on-up: #3b2600;    /* text on --up */
-  --down: #172e60;     /* night blue */
+  --down: #2c4a92;     /* night blue */
   --on-down: #ffffff;  /* text on --down */
-  --accent: #2f6fde;
-  --danger: #a3262c;  /* dark red: alarm × and Stop */
-  --neutral: #dde1e7;  /* plain buttons (Add) */
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #111418;
-    --card: #1b2027;
-    --text: #e8eaed;
-    --muted: #9aa3ae;
-    --line: #2b323b;
-    --up: #d6a04a;
-    --down: #2c4a92;
-    --accent: #4f86ec;
-    --danger: #a8323a;
-    --neutral: #353d48;
-  }
+  --accent: #4f86ec;
+  --danger: #a8323a;   /* dark red: alarm × and Stop */
+  --neutral: #353d48;  /* plain buttons (Add) */
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -100,6 +86,9 @@ h2 {
 }
 .badge.up { background: var(--up); color: var(--on-up); }
 .badge.down { background: var(--down); color: var(--on-down); }
+.badge.phone { background: var(--neutral); color: var(--text); }   /* the phone's alarm, shown in the Android app */
+.alarms li.phone { cursor: pointer; }
+.alarms li.phone .alarm-time { color: var(--muted); }
 .remove {
   padding: 2px 10px;
   border-radius: 8px;
@@ -124,14 +113,9 @@ input.field { min-width: 0; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239aa3ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
-}
-@media (prefers-color-scheme: dark) {
-  .field.dropdown-button {
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239aa3ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-  }
 }
 /* The open list: the time picker's popover, as wide as the button, scrolling if long */
 .dropdown { position: relative; }
