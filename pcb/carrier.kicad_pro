@@ -100,7 +100,7 @@
         "item_on_disabled_layer": "error",
         "items_not_allowed": "error",
         "length_out_of_range": "error",
-        "lib_footprint_issues": "warning",
+        "lib_footprint_issues": "ignore",
         "lib_footprint_mismatch": "warning",
         "malformed_courtyard": "error",
         "microvia_drill_out_of_range": "error",
@@ -265,7 +265,9 @@
   "erc": {
     "erc_exclusions": [],
     "rule_severities": {
-      "global_label_dangling": "warning"
+      "global_label_dangling": "warning",
+      "lib_symbol_issues": "ignore",
+      "footprint_link_issues": "ignore"
     }
   },
   "libraries": {

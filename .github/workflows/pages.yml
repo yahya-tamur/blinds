@@ -1,10 +1,10 @@
-# Publishes carrier/docs to GitHub Pages: the landing page at / and the soldering checklist at /soldering-guide/.
+# Publishes docs/ to GitHub Pages: the landing page at /, the v0.2.0 soldering checklist and locate.html.
 name: Pages
 
 on:
   push:
     branches: [main]
-    paths: ["carrier/docs/**", ".github/workflows/pages.yml"]
+    paths: ["docs/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -24,8 +24,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/upload-pages-artifact@v3   # carrier/docs is laid out exactly like the site
+      - uses: actions/upload-pages-artifact@v3   # docs/ is laid out exactly like the site
         with:
-          path: carrier/docs
+          path: docs
       - id: deployment
         uses: actions/deploy-pages@v4

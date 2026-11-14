@@ -1225,7 +1225,7 @@
 			(uuid "ef7d1934-bc5d-4489-8a9d-9fb934b2b65b")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/../../carrier.3dshapes/ESP32-S3-DevKitC-1_soldered.wrl"
+		(model "${KIPRJMOD}/carrier.3dshapes/ESP32-S3-DevKitC-1_soldered.wrl"
 			(offset
 				(xyz 0 0 0)
 			)
@@ -1413,7 +1413,7 @@
 			(uuid "2dfe5726-0dfc-4d1b-9b1a-3c1c66a83ce8")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/../../carrier.3dshapes/CAX_MTS123_D2.wrl"
+		(model "${KIPRJMOD}/carrier.3dshapes/CAX_MTS123_D2.wrl"
 			(offset
 				(xyz 0 0 0)
 			)
@@ -3089,7 +3089,7 @@
 			(uuid "4c72b0e2-384d-4bd6-aa93-dd055a973ea8")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/../../carrier.3dshapes/BS-02-A1AJ010.wrl"
+		(model "${KIPRJMOD}/carrier.3dshapes/BS-02-A1AJ010.wrl"
 			(offset
 				(xyz 0 0 0)
 			)
@@ -4083,7 +4083,7 @@
 			(uuid "4b218180-4a0f-4d54-a1f1-d1d7c5d22215")
 		)
 		(embedded_fonts no)
-		(model "${KIPRJMOD}/../../carrier.3dshapes/BTT_TMC2209_soldered.wrl"
+		(model "${KIPRJMOD}/carrier.3dshapes/BTT_TMC2209_soldered.wrl"
 			(offset
 				(xyz 0 0 0)
 			)

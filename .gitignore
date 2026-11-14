@@ -1,28 +1,25 @@
 __pycache__/
-arduino/arduino_secrets.h
-carrier/firmware/build/
-carrier/firmware/main/secrets.h
-carrier/pcb/*
-# v0.2.0 KiCad project files (enough to open the board and plot the Gerbers)
-!carrier/pcb/boards/
-carrier/pcb/boards/*
-!carrier/pcb/boards/v0.2.0/
-carrier/pcb/boards/v0.2.0/*
-!carrier/pcb/boards/v0.2.0/carrier.kicad_pro
-!carrier/pcb/boards/v0.2.0/carrier.kicad_sch
-!carrier/pcb/boards/v0.2.0/carrier.kicad_pcb
-# v0.2.0 assembly STL for designing the enclosure (the rest of manufacturing/ stays local)
-!carrier/pcb/boards/v0.2.0/manufacturing/
-carrier/pcb/boards/v0.2.0/manufacturing/*
-!carrier/pcb/boards/v0.2.0/manufacturing/carrier_v0.2.0_assembly.stl
-carrier/firmware/sdkconfig
 CLAUDE.md
-
-# Old soldering guide for the dropped J4 design (was "rev 2", later "rev 3"); kept locally, to be deleted later
-carrier/docs/soldering-guide/
 
 # Claude Code settings and preview launchers (local only)
 .claude/
 
+# Firmware build output, local config and secrets
+firmware/build/
+firmware/sdkconfig
+firmware/main/secrets.h
 # Setup-specific firmware tests, their runner scripts and measurements: kept local
-carrier/firmware/local/
+firmware/local/
+
+# Old soldering guide for the dropped J4 design (was "rev 2", later "rev 3"); kept locally, to be deleted later
+docs/soldering-guide/
+
+# pcb/: only the v0.2.0 KiCad project is tracked (enough to open the board and plot the Gerbers);
+# the generators, libraries, older boards and manufacturing output stay local
+pcb/*
+!pcb/carrier.kicad_pro
+!pcb/carrier.kicad_sch
+!pcb/carrier.kicad_pcb
+
+# enclosure/: the SS460S Hall sensor model (from pcb/generator/make_ss460s_stl.py) stays local for now
+enclosure/ss460s.stl
