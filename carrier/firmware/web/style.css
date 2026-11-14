@@ -29,7 +29,9 @@
 }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
+/* The pages are laid out for phones and desktops from 320 px wide (the narrowest phones) up */
 body {
+  min-width: 320px;
   margin: 0;
   background: var(--bg);
   color: var(--text);
@@ -53,7 +55,7 @@ h2 {
 }
 .clock {
   text-align: center;
-  font-size: 48px;
+  font-size: clamp(36px, 12vw, 48px);
   white-space: nowrap;
   font-weight: 300;
   font-variant-numeric: tabular-nums;
@@ -86,7 +88,9 @@ h2 {
   border-bottom: 1px solid var(--line);
 }
 .alarms li:last-child { border-bottom: 0; }
-.alarm-time { flex: 1; font-size: 24px; font-variant-numeric: tabular-nums; }
+.alarm-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.alarm-time { font-size: 24px; font-variant-numeric: tabular-nums; }
+.alarm-sub { color: var(--muted); font-size: 13px; }
 .badge {
   padding: 4px 12px;
   border-radius: 999px;
@@ -105,7 +109,55 @@ h2 {
   text-decoration: none;
 }
 .empty { margin: 0; color: var(--muted); }
-.add { display: flex; gap: 8px; min-width: 0; margin: 0 0 8px; padding: 0; border: 0; }
+.add { display: flex; flex-direction: column; gap: 8px; min-width: 0; margin: 0 0 8px; padding: 0; border: 0; }
+.add-row { display: flex; gap: 8px; min-width: 0; }
+.add-row > .field, .add-row > .time-picker, .add-row > .dropdown { flex: 1 1 0; min-width: 0; }
+.add-row > .toggle { flex: none; }
+.add-hint { margin: -2px 0 0; min-height: 1.4em; color: var(--muted); font-size: 14px; }
+.add-hint.error { color: var(--danger); }
+input.field { min-width: 0; }
+/* Our own dropdown arrow, so its gap to the right edge matches the text's gap on the left */
+.field.dropdown-button {
+  width: 100%;
+  padding-right: 34px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+@media (prefers-color-scheme: dark) {
+  .field.dropdown-button {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%239aa3ae' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  }
+}
+/* The open list: the time picker's popover, as wide as the button, scrolling if long */
+.dropdown { position: relative; }
+.dropdown-list { right: 0; display: flex; flex-direction: column; gap: 2px; max-height: 268px; overflow-y: auto;
+  scrollbar-width: thin; }
+.dropdown-list button {
+  flex: none;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 17px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.dropdown-list button:hover, .dropdown-list button:focus-visible { color: var(--text); background: var(--bg); outline: none; }
+.dropdown-list button[aria-selected="true"] { color: var(--text); font-weight: 600; background: var(--line); }
+
+input.field { cursor: text; }
+.kinds label { flex: 1; }
+.kinds span { flex: 1; justify-content: center; }
+.kinds input:checked + span { background: var(--neutral); color: var(--text); }
 .add:disabled { opacity: .4; }
 .field {
   height: 46px;
@@ -124,6 +176,7 @@ h2 {
   outline-offset: 1px;
 }
 .add .btn { height: 46px; padding: 0 14px; font-size: 18px; background: var(--neutral); color: var(--text); }
+.add .add-button { flex: 1; }
 
 /* Time picker: a button that opens a rounded popover with hour / minute / AM-PM columns */
 .time-picker { position: relative; flex: 1 1 0; min-width: 0; }
@@ -233,3 +286,82 @@ h2 {
 .offline { display: none; margin: 8px 0 0; text-align: center; color: var(--danger); font-size: 14px; }
 .stale .offline { display: block; }
 .stale .clock, .stale .remaining, .stale .bar { opacity: .35; }
+
+/* Health line under the main page, and the update page */
+.footer { margin: 4px 0 0; text-align: center; font-size: 13px; color: var(--muted); }
+.footer a { color: var(--muted); }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 0; font-size: 15px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.stale .facts { opacity: .35; }
+.note { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.4; }
+.note:empty { display: none; }
+.upload { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.upload .field { padding: 10px; height: auto; }
+.upload .btn { background: var(--neutral); color: var(--text); }
+.upload .btn:disabled { opacity: .5; }
+progress { width: 100%; height: 8px; margin-bottom: 12px; accent-color: var(--accent); }
+
+/* Stops card */
+.position { text-align: center; font-size: 15px; color: var(--muted); margin-bottom: 10px; }
+.position span { font-size: 28px; color: var(--text); font-variant-numeric: tabular-nums; margin-left: 6px; }
+.nudge { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+.nudge .btn { height: 44px; padding: 0; font-size: 16px; border: 0; cursor: pointer; }
+.nudge .btn:disabled, .stops button:disabled { opacity: .4; cursor: default; }
+.stops { list-style: none; margin: 0; padding: 0; }
+.stops li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.stop-name { width: 64px; font-weight: 600; }
+.stop-at { flex: 1; font-variant-numeric: tabular-nums; color: var(--muted); }
+.small { height: 34px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--neutral); color: var(--text);
+  font-size: 14px; cursor: pointer; }
+
+/* Motor test card (update page) */
+.motor-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: 8px; margin-bottom: 10px; }
+.motor-form .field { padding: 0 8px; }
+.motor-form .field.dropdown-button { padding: 0 30px 0 10px; background-position: right 10px center; }
+.motor-form .btn { height: 46px; padding: 0 14px; font-size: 16px; background: var(--neutral); color: var(--text); }
+.test-nudge { grid-template-columns: 1fr 1fr; }
+.test-nudge .btn { font-size: 15px; }
+
+/* Folding cards (Speed, Adjust stops): just the title, and a short summary, until opened */
+.fold summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.fold summary::-webkit-details-marker { display: none; }
+.fold summary h2 { margin: 0; flex: 1; }
+.fold-info { color: var(--muted); font-size: 14px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fold summary::after { content: ""; width: 7px; height: 7px; margin: 0 4px 4px 0; border: solid var(--muted);
+  border-width: 0 2px 2px 0; transform: rotate(45deg); transition: transform .15s; }
+.fold[open] summary::after { margin: 4px 4px 0 0; transform: rotate(-135deg); }
+.fold[open] summary { margin-bottom: 12px; }
+.fold[open] .fold-info { display: none; }
+
+/* Location card */
+.location-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: 8px; margin: 12px 0 10px; }
+.location-form .btn { height: 46px; padding: 0 14px; font-size: 16px; background: var(--neutral); color: var(--text); }
+.location-actions { margin-bottom: 12px; }
+#sun-today { margin: 0; }
+
+/* Speed dials, Up and Down side by side */
+.knobs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.knob-tile { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px 4px;
+  border-radius: 12px; background: var(--bg); }
+.knob { display: block; width: 100%; max-width: 132px; height: auto; touch-action: none; cursor: grab;
+  user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; border-radius: 12px; }
+.knob:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.knob text { pointer-events: none; text-anchor: middle; }
+.knob .track, .knob .arc { fill: none; stroke-width: 8; stroke-linecap: round; }
+.knob .track { stroke: var(--line); }
+.knob-value { font-size: 24px; font-weight: 600; fill: var(--text); font-variant-numeric: tabular-nums; }
+.knob-unit { font-size: 11px; fill: var(--muted); }
+[data-dir="up"] .arc { stroke: var(--up); } [data-dir="up"] .dot { fill: var(--up); }
+[data-dir="down"] .arc { stroke: var(--down); } [data-dir="down"] .dot { fill: var(--down); }
+
+/* Narrow phones: less padding so everything keeps fitting down to 320 px */
+@media (max-width: 380px) {
+  main { padding: 16px 10px 32px; }
+  .card { padding: 16px 14px; }
+  .add { gap: 6px; }
+  .add .field { font-size: 16px; }
+  .time-button { padding: 0 8px; }
+  .toggle span { padding: 0 7px; font-size: 15px; }
+  .add .btn { padding: 0 10px; font-size: 16px; }
+}

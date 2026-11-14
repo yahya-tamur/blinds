@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #define TMC_GCONF       0x00
+#define TMC_GSTAT       0x01   // bit 0 reset since last cleared, 1 driver error, 2 charge pump undervoltage; write 1s to clear
 #define TMC_IFCNT       0x02
 #define TMC_IOIN        0x06
 #define TMC_IHOLD_IRUN  0x10

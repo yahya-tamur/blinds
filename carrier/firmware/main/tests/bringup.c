@@ -1,10 +1,12 @@
 #include <stdarg.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
+#include "driver/pulse_cnt.h"
 #include "esp_attr.h"
 #include "esp_err.h"
 #include "board.h"
@@ -12,8 +14,9 @@
 #include "tests.h"
 
 // Bring-up test for a newly built board: checks every part in turn and ends with a pass/fail list.
-// The RTC checks itself, then come the steps that need a hand (switch, remote, magnets; each waits up to
-// PROMPT_S seconds), then the driver and a short motor move through the relay: about two minutes in all;
+// The RTC checks itself, then come the steps that need a hand (switch, remote; each waits up to PROMPT_S
+// seconds), then the driver and a short motor move through the relay, then the motor turns the magnet gear
+// while the Hall sensors are counted (the board must be on the gearbox): about two minutes in all;
 // watch it with idf.py monitor. The switch answers the yes/no questions: up = yes.
 
 #define PROMPT_S     20
@@ -202,25 +205,6 @@ static void check_inputs(void)
            other ? "frames seen but none decoded as NEC (other protocol, or a weak signal)" : "nothing received");
 }
 
-static void check_hall(void)
-{
-    hall_counter_init();
-    const int pins[2] = { PIN_HALL_A, PIN_HALL_B };
-    const char *what[2] = { "Hall A", "Hall B" };
-    for (int i = 0; i < 2; i++) {
-        printf(">>> %s (U%s): hold one face of a magnet to it, then the other face, until it switches both ways...\n",
-               what[i], i == 0 ? "7" : "8");
-        bool seen[2] = { false, false };
-        for (int t = 0; t < PROMPT_S * 100 && !(seen[0] && seen[1]); t++) {
-            seen[gpio_get_level(pins[i])] = true;
-            vTaskDelay(pdMS_TO_TICKS(10));
-        }
-        report(what[i], seen[0] && seen[1], seen[0] && seen[1] ? "read both low (on) and high (off)" :
-               seen[0] ? "stayed low (on): try the magnet's other face" : "stayed high (off): no south pole seen, "
-               "or no 3.3 V at the sensor");
-    }
-}
-
 // ---------------- driver, relay, motor ----------------
 // Moves slowly for ms and returns the DRV_STATUS read in the middle of it (0xFFFFFFFF if no reply)
 static uint32_t move_and_read(int dir, int ms)
@@ -275,16 +259,75 @@ static void check_motor(void)
     report("Motor turns", yes > 0, yes > 0 ? "seen" : yes == 0 ? "not seen" : "no answer");
 }
 
+// ---------------- Hall sensors, driven by the motor ----------------
+// With the board on the gearbox, the motor turns the magnet gear HALL_TEST_REVS motor turns out and back. Each
+// sensor must switch several times, and the quadrature count must move out and come back.
+#define HALL_TEST_REVS  2.0f                     // 6 counts at 4 motor turns per gear turn, 12 counts per gear turn
+#define HALL_TEST_RATE  1600                     // 0.5 motor turn per second at 16 microsteps
+
+// Moves revs motor turns in dir, counting each sensor's level changes; returns the PCNT count change
+static int hall_move(pcnt_unit_handle_t counter, int dir, int changes[2])
+{
+    const int pins[2] = { PIN_HALL_A, PIN_HALL_B };
+    int last[2] = { gpio_get_level(pins[0]), gpio_get_level(pins[1]) };
+    int c0, c1;
+    ESP_ERROR_CHECK(pcnt_unit_get_count(counter, &c0));
+    gpio_set_level(PIN_DIR, dir);
+    gpio_set_level(PIN_MOT_EN, 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    step_rate(HALL_TEST_RATE);
+    int ms = (int)(HALL_TEST_REVS * 200 * 16 * 1000 / HALL_TEST_RATE);
+    for (int t = 0; t < ms; t += portTICK_PERIOD_MS) {
+        for (int i = 0; i < 2; i++) {
+            int v = gpio_get_level(pins[i]);
+            if (v != last[i]) { changes[i]++; last[i] = v; }
+        }
+        vTaskDelay(1);                           // one tick (10 ms); edges come about 0.7 s apart
+    }
+    step_rate(0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    gpio_set_level(PIN_MOT_EN, 1);
+    ESP_ERROR_CHECK(pcnt_unit_get_count(counter, &c1));
+    return c1 - c0;
+}
+
+static void check_hall(void)
+{
+    pcnt_unit_handle_t counter = hall_counter_init();
+    gpio_set_level(PIN_MOT_EN, 1);
+    gpio_set_level(PIN_RELAY, 1);                // relay on again (EN high), as for the motor check
+    vTaskDelay(pdMS_TO_TICKS(RELAY_SETTLE_MS));
+    printf("Turning the magnet gear: %.0f motor turns one way, then back (board on the gearbox)...\n", HALL_TEST_REVS);
+    int out_changes[2] = { 0, 0 }, back_changes[2] = { 0, 0 };
+    int out = hall_move(counter, 0, out_changes);
+    vTaskDelay(pdMS_TO_TICKS(300));
+    int back = hall_move(counter, 1, back_changes);
+    relay_off();
+    const char *what[2] = { "Hall A (U7)", "Hall B (U8)" };
+    int expect = (int)(HALL_TEST_REVS * HALL_COUNTS_PER_REV / 4);    // counts per direction: 4 motor turns per gear turn
+    for (int i = 0; i < 2; i++) {
+        int n = out_changes[i] + back_changes[i];
+        // each sensor switches at every other count: expect about `expect` changes over out and back
+        report(what[i], n >= expect / 2, "%d changes out, %d back (about %d each way)%s", out_changes[i],
+               back_changes[i], expect / 2, n ? "" : ": not switching (sensor, its 3.3 V, or no magnet in reach)");
+    }
+    bool moved = abs(out) >= expect - 2;
+    bool returned = abs(out + back) <= 1;
+    report("Hall count", moved && returned, "%+d out, %+d back (expect about %+d and back to 0)%s", out, back, expect,
+           !moved ? ": too few counts (a sensor not switching, gear slipping, or magnets out of reach)"
+           : !returned ? ": didn't come back (missed edges)" : "");
+}
+
 void test_bringup(void)
 {
     printf("\n==== Carrier bring-up test ====\n"
            "Do the soldering guide's power checks first. Then plug in the motor and the 24 V supply;\n"
-           "have a remote and a magnet at hand.\n\n");
+           "have a remote at hand, and the board on the gearbox (magnets over the Hall sensors).\n\n");
     vTaskDelay(pdMS_TO_TICKS(2000));
     check_rtc();
     check_inputs();
-    check_hall();
     check_motor();
+    check_hall();
 
     int fails = 0, skips = 0;
     printf("\n==== Summary ====\n");

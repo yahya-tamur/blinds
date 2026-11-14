@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Firmware Update</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script src="dropdown.js"></script>
+</head>
+<body>
+<main>
+  <section class="card">
+    <h2>Controller</h2>
+    <dl class="facts" id="facts">
+      <dt>Firmware</dt><dd id="version">&ndash;</dd>
+      <dt>Running for</dt><dd id="uptime">&ndash;</dd>
+      <dt>Last restart</dt><dd id="reset">&ndash;</dd>
+      <dt>Motor then</dt><dd id="before-reset">&ndash;</dd>
+      <dt>Memory free</dt><dd id="heap">&ndash;</dd>
+      <dt>Wi-Fi signal</dt><dd id="rssi">&ndash;</dd>
+    </dl>
+    <p class="offline">Not connected to the controller</p>
+  </section>
+
+  <section class="card">
+    <h2>Motor test</h2>
+    <form id="motor-form" class="motor-form">
+      <div class="dropdown" id="irms" aria-label="Run current, A"></div>
+      <div class="dropdown" id="mode" aria-label="Chopper mode"></div>
+      <button class="btn" type="submit">Apply</button>
+    </form>
+    <div class="nudge test-nudge">
+      <button type="button" class="btn up" data-jog="up">&#9650;&#9650; half a turn</button>
+      <button type="button" class="btn down" data-jog="down">&#9660;&#9660; half a turn</button>
+    </div>
+    <dl class="facts">
+      <dt>Setting</dt><dd id="setting">&ndash;</dd>
+      <dt>Last move</dt><dd id="driver">&ndash;</dd>
+      <dt>Position</dt><dd id="test-pos">&ndash;</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Update firmware</h2>
+    <p class="note">Choose <code>build/carrier_fw.bin</code> from <code>idf.py build</code>. The controller restarts
+      with it; if the new firmware crashes or restarts within a minute, it goes back to this one.</p>
+    <form id="form" class="upload">
+      <input class="field" type="file" id="file" accept=".bin" required>
+      <button class="btn" type="submit" id="send">Upload and restart</button>
+    </form>
+    <progress id="progress" max="1" value="0" hidden></progress>
+    <p class="note" id="message" aria-live="polite"></p>
+  </section>
+  <p class="footer"><a href="/">Back</a></p>
+</main>
+<script>
+const irms = makeDropdown(document.getElementById("irms"),
+  ["0.6", "0.8", "1.0", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"].map(v => ({ value: v, label: v + " A" })), "1.7", () => {});
+const mode = makeDropdown(document.getElementById("mode"),
+  [{ value: "spread", label: "Spread" }, { value: "stealth", label: "Stealth" }], "stealth", () => {});
+const $ = id => document.getElementById(id);
+
+function duration(s) {
+  const d = Math.floor(s / 86400), h = Math.floor(s / 3600) % 24, m = Math.floor(s / 60) % 60;
+  return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`;
+}
+
+function rssiText(r) {
+  if (r === null) return "not connected";
+  const word = r >= -55 ? "excellent" : r >= -67 ? "good" : r >= -75 ? "usable" : "poor";
+  return `${r} dBm (${word})`;
+}
+
+let lastVersion = null, lastUptime = 0, uptimeAtUpload = 0;
+async function check() {
+  try {
+    const status = await (await fetch("/api/status?since=999999", { cache: "no-store" })).json();
+    const s = status.stats;
+    showMotor(status);
+    document.body.classList.remove("stale");
+    $("version").textContent = s.version;
+    $("uptime").textContent = duration(s.uptime_s);
+    $("reset").textContent = s.reset;
+    $("before-reset").textContent = s.before_reset || "-";
+    $("heap").textContent = `${Math.round(s.heap / 1024)} KB (lowest ${Math.round(s.heap_min / 1024)} KB)`;
+    $("rssi").textContent = rssiText(s.rssi);
+    if (waitingForRestart && s.uptime_s < uptimeAtUpload) {     // its uptime went back: it has restarted
+      waitingForRestart = false;
+      $("message").textContent = (s.version === lastVersion ? "Back up (same version as before). " : "Back up with the new firmware. ") +
+        "It is confirmed after one minute of running.";
+      $("send").disabled = false;
+    }
+    if (!waitingForRestart) lastVersion = s.version;
+    lastUptime = s.uptime_s;
+  } catch (e) {
+    document.body.classList.add("stale");
+  }
+}
+let waitingForRestart = false;
+
+// Motor test card
+let motorFormSet = false;
+function showMotor(st) {
+  if (st.irms === undefined) return;
+  $("setting").textContent = `${st.irms.toFixed(2)} A, ${st.mode === "spread" ? "SpreadCycle" : "StealthChop"}`;
+  if (!motorFormSet) {           // show the controller's setting once, then leave the choice to the user
+    motorFormSet = true;
+    irms.set(["0.6", "0.8", "1.0", "1.2", "1.3", "1.4", "1.5", "1.6", "1.7"].find(v => Math.abs(v - st.irms) < 0.05) || "1.7");
+    mode.set(st.mode);
+  }
+  const d = st.driver;
+  $("driver").textContent = !d ? "no reading yet (moves over 1 s)" :
+    `driver current ${d.current}/31` + (d.open_a ? " · coil A OPEN" : "") + (d.open_b ? " · coil B OPEN" : "") +
+    (d.fault ? " · FAULT" : "") + (!d.open_a && !d.open_b && !d.fault ? " · both coils fine" : "");
+  $("test-pos").textContent = st.pos + (st.remaining_ms > 0 ? " (moving)" : "");
+  for (const b of document.querySelectorAll("[data-jog]")) b.disabled = st.remaining_ms > 0;
+}
+$("motor-form").onsubmit = async e => {
+  e.preventDefault();
+  await fetch("/api/motor/settings", { method: "POST", body: new URLSearchParams({ i: irms.value, m: mode.value }) });
+  check();
+};
+for (const b of document.querySelectorAll("[data-jog]")) {
+  b.onclick = async () => {
+    await fetch("/api/jog", { method: "POST", body: new URLSearchParams({ d: b.dataset.jog, n: 6 }) });
+    check();
+  };
+}
+setInterval(check, 2000);
+check();
+
+$("form").onsubmit = e => {
+  e.preventDefault();
+  const file = $("file").files[0];
+  if (!file) return;
+  const xhr = new XMLHttpRequest();   // fetch() can't report upload progress
+  xhr.open("POST", "/api/ota");
+  xhr.setRequestHeader("Content-Type", "application/octet-stream");
+  $("progress").hidden = false;
+  $("progress").value = 0;
+  $("send").disabled = true;
+  $("message").textContent = "Uploading...";
+  xhr.upload.onprogress = ev => { if (ev.lengthComputable) $("progress").value = ev.loaded / ev.total; };
+  xhr.onload = () => {
+    if (xhr.status === 200) {
+      waitingForRestart = true;
+      uptimeAtUpload = lastUptime + 1;
+      $("message").textContent = "Written. Restarting; this page updates when the controller is back...";
+    } else {
+      $("send").disabled = false;
+      $("message").textContent = "Not updated: " + xhr.responseText;
+    }
+  };
+  xhr.onerror = () => {
+    $("send").disabled = false;
+    $("message").textContent = "The upload was interrupted. Nothing changed; try again.";
+  };
+  xhr.send(file);
+};
+</script>
+</body>
+</html>

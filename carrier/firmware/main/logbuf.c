@@ -44,6 +44,21 @@ void logbuf_init(void)
     original = esp_log_set_vprintf(hook);
 }
 
+// printf that also keeps a copy in the buffer (once logbuf_init has run), for test output the web page shows
+int logbuf_vprintf(const char *fmt, va_list args)
+{
+    return original ? hook(fmt, args) : vprintf(fmt, args);
+}
+
+int logbuf_printf(const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    int n = logbuf_vprintf(fmt, args);
+    va_end(args);
+    return n;
+}
+
 uint32_t logbuf_next(void)
 {
     taskENTER_CRITICAL(&lock);

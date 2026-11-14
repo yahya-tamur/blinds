@@ -6,6 +6,7 @@
 <title>Motor Control</title>
 <link rel="stylesheet" href="style.css">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<script src="dropdown.js"></script>
 </head>
 <body>
 <main>
@@ -27,30 +28,87 @@
     <!-- Sits above the list so it stays put however many alarms there are; disabled when the list is full -->
     <form id="add-form">
       <fieldset class="add" id="add-fieldset">
-      <div class="time-picker">
-        <button type="button" class="field time-button" id="time-button" aria-haspopup="true" aria-expanded="false"></button>
-        <div class="popover" id="time-popover" hidden>
-          <div class="wheels" id="wheels"><div class="wheel-band"></div></div>
-          <button type="button" class="done" id="time-done">Done</button>
+      <div class="field toggle kinds" role="radiogroup" aria-label="Kind of alarm">
+        <label><input type="radio" name="k" value="recurring" checked><span>Daily</span></label>
+        <label><input type="radio" name="k" value="once"><span>Once</span></label>
+        <label><input type="radio" name="k" value="sun"><span>Sun</span></label>
+      </div>
+      <div class="add-row">
+        <div class="time-picker" data-for="recurring once">
+          <button type="button" class="field time-button" id="time-button" aria-haspopup="true" aria-expanded="false"></button>
+          <div class="popover" id="time-popover" hidden>
+            <div class="wheels" id="wheels"><div class="wheel-band"></div></div>
+            <button type="button" class="done" id="time-done">Done</button>
+          </div>
         </div>
+        <div class="dropdown" id="event" aria-label="Sun event" data-for="sun"></div>
+        <div class="dropdown" id="offset" aria-label="Offset" data-for="sun"></div>
       </div>
-      <div class="field toggle" role="radiogroup" aria-label="Direction">
-        <label class="up"><input type="radio" name="d" value="up" checked><span>Up</span></label>
-        <label class="down"><input type="radio" name="d" value="down"><span>Down</span></label>
+      <p class="add-hint" id="add-hint"></p>
+      <div class="add-row">
+        <div class="field toggle" role="radiogroup" aria-label="Direction">
+          <label class="up"><input type="radio" name="d" value="up" checked><span>Up</span></label>
+          <label class="down"><input type="radio" name="d" value="down"><span>Down</span></label>
+        </div>
+        <button class="btn add-button" type="submit">Add</button>
       </div>
-      <button class="btn" type="submit">Add</button>
       </fieldset>
     </form>
     <ul class="alarms" id="alarms"></ul>
     <p class="empty" id="alarms-empty" hidden>No alarms yet.</p>
     <template id="alarm-row">
       <li>
-        <span class="alarm-time"></span>
+        <span class="alarm-main"><span class="alarm-time"></span><span class="alarm-sub"></span></span>
         <span class="badge"></span>
         <a class="remove" href="/" aria-label="Remove alarm">&times;</a>
       </li>
     </template>
   </section>
+  <details class="card fold" id="location-card">
+    <summary><h2>Location</h2><span class="fold-info" id="location-info"></span></summary>
+    <p class="note">For sun alarms. One decimal place (about 10 km) is plenty. North and east are positive,
+      so the western US has a negative longitude.</p>
+    <form class="location-form" id="location-form">
+      <input class="field" id="lat" type="number" step="0.1" min="-90" max="90" inputmode="decimal" placeholder="Latitude" aria-label="Latitude" required>
+      <input class="field" id="lon" type="number" step="0.1" min="-180" max="180" inputmode="decimal" placeholder="Longitude" aria-label="Longitude" required>
+      <button class="btn" type="submit">Save</button>
+    </form>
+    <div class="location-actions">
+      <button type="button" class="small" id="locate">Use my location</button>
+    </div>
+    <p class="note" id="sun-today"></p>
+  </details>
+  <details class="card fold" id="speed-card">
+    <summary><h2>Speed</h2><span class="fold-info" id="speed-info"></span></summary>
+    <div class="knobs">
+      <div class="knob-tile" data-dir="up"><span class="badge up">Up</span></div>
+      <div class="knob-tile" data-dir="down"><span class="badge down">Down</span></div>
+    </div>
+    <p class="note">Motor turns per second. Drag a dial to change it. A run that stalls finishes at 2 rev/s.</p>
+  </details>
+  <details class="card fold" id="stops-card">
+    <summary><h2>Adjust stops</h2></summary>
+    <p class="note">Nudge the blinds to where a run should stop, then save it. Up and Down only run once
+      their stop is saved.</p>
+    <div class="position">Position <span id="pos">&ndash;</span></div>
+    <div class="nudge" id="nudge">
+      <button type="button" class="btn up" data-jog="up" data-n="6" title="Half a turn of the sprocket">&#9650;&#9650;</button>
+      <button type="button" class="btn up" data-jog="up" data-n="1" title="30 degrees of the sprocket">&#9650;</button>
+      <button type="button" class="btn down" data-jog="down" data-n="1" title="30 degrees of the sprocket">&#9660;</button>
+      <button type="button" class="btn down" data-jog="down" data-n="6" title="Half a turn of the sprocket">&#9660;&#9660;</button>
+    </div>
+    <ul class="stops">
+      <li><span class="stop-name">Top</span><span class="stop-at" id="stop-top">not set</span>
+        <button type="button" class="small" data-stop="top" data-act="set">Save here</button>
+        <button type="button" class="small" data-stop="top" data-act="clear">Clear</button></li>
+      <li><span class="stop-name">Bottom</span><span class="stop-at" id="stop-bottom">not set</span>
+        <button type="button" class="small" data-stop="bottom" data-act="set">Save here</button>
+        <button type="button" class="small" data-stop="bottom" data-act="clear">Clear</button></li>
+    </ul>
+    <p class="note">Nudges move at 2 rev/s.</p>
+  </details>
+
+  <p class="footer"><span id="health"></span> &middot; <a href="/update">Firmware</a></p>
 </main>
 <script>
 // The page is static: everything it shows comes from /api/status, asked for every second.
@@ -73,66 +131,100 @@ function render() {
   const hours = Math.floor(s / 3600);
   document.getElementById("clock").textContent =
     (hours % 12 || 12) + ":" + pad(Math.floor(s / 60) % 60) + ":" + pad(s % 60) + " " + (hours < 12 ? "AM" : "PM");
-  sortAlarms(Math.floor(s / 60));
-}
-
-// List alarms soonest first: the next one to go off is at the top, and one
-// whose minute has come (or passed) drops to the bottom. Redone as the minute changes.
-let sortedFor = null;
-function sortAlarms(minute, force) {
-  if (minute === sortedFor && !force) {
-    return;
-  }
-  sortedFor = minute;
-  const list = document.querySelector(".alarms");
-  const minutesUntil = li => (Number(li.dataset.minute) - minute - 1 + 1440) % 1440;
-  [...list.children].sort((a, b) => minutesUntil(a) - minutesUntil(b)).forEach(li => list.append(li));
 }
 
 // Formats minutes since midnight as "7:30 AM"
 function formatMinute(m) {
+  m = (m % 1440 + 1440) % 1440;
   const hours = Math.floor(m / 60);
   return (hours % 12 || 12) + ":" + pad(m % 60) + " " + (hours < 12 ? "AM" : "PM");
 }
 
-// Rebuilds the list when the controller's alarms differ from what's shown
+// Dates come from the controller as "YYYY-MM-DD" in its local time; "today" is its own date
+let today = null;
+let lastLocation = null, lastSun = null;   // from the last status: for the sun alarm hint
+function addDays(date, n) {
+  const [y, m, d] = date.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + n));
+  return t.toISOString().slice(0, 10);
+}
+function dayLabel(date) {
+  if (date === today) return "Today";
+  if (today && date === addDays(today, 1)) return "Tomorrow";
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+}
+// "YYYY-MM-DD HH:MM" from the controller: the date and the minute of the day
+function splitWhen(when) {
+  const [date, hm] = when.split(" ");
+  const [h, m] = hm.split(":").map(Number);
+  return { date, minute: h * 60 + m };
+}
+
+const SUN_NAMES = { dawn: "Dawn", sunrise: "Sunrise", sunset: "Sunset", dusk: "Dusk" };
+function sunLabel(event, offset) {
+  if (!offset) return SUN_NAMES[event];
+  return `${SUN_NAMES[event]} ${offset > 0 ? "+" : "−"} ${Math.abs(offset)} min`;
+}
+
+// What the remove button sends: the same fields the alarm was listed with
+function alarmFields(a) {
+  if (a.kind === "once") return { k: "once", at: a.at, d: a.dir };
+  if (a.kind === "sun") return { k: "sun", e: a.event, o: a.offset, d: a.dir };
+  return { k: "recurring", m: a.minute, d: a.dir };
+}
+
+// Rebuilds the list when the controller's alarms differ from what's shown. Soonest first, by the next
+// time the controller worked out; sun alarms without a location (no next time) go last.
 let shownAlarms = null;
 function showAlarms(alarms, max) {
-  const key = JSON.stringify(alarms);
+  const key = JSON.stringify([alarms, today]);
   if (key === shownAlarms) {
     return;
   }
   shownAlarms = key;
   const list = document.getElementById("alarms");
   const row = document.getElementById("alarm-row").content;
-  list.replaceChildren(...alarms.map(a => {
+  const sorted = [...alarms].sort((a, b) => (a.next ?? Infinity) - (b.next ?? Infinity));
+  list.replaceChildren(...sorted.map(a => {
     const li = row.firstElementChild.cloneNode(true);
-    li.dataset.minute = a.minute;
-    li.querySelector(".alarm-time").textContent = formatMinute(a.minute);
+    const when = a.when ? splitWhen(a.when) : null;
+    let time, sub;
+    if (a.kind === "recurring") {
+      time = formatMinute(a.minute);
+      sub = "Every day";
+    } else if (a.kind === "once") {
+      time = when ? formatMinute(when.minute) : "–";
+      sub = when ? dayLabel(when.date) : "Once";
+    } else {
+      time = when ? formatMinute(when.minute) : "–";
+      sub = sunLabel(a.event, a.offset) + (!when ? " · set a location" : when.date !== today ? " · " + dayLabel(when.date) : "");
+    }
+    li.querySelector(".alarm-time").textContent = time;
+    li.querySelector(".alarm-sub").textContent = sub;
     const badge = li.querySelector(".badge");
     badge.textContent = a.dir;
     badge.classList.add(a.dir);
     li.querySelector(".remove").onclick = e => {
       e.preventDefault();
-      post("/api/alarms/remove", { m: a.minute, d: a.dir });
+      post("/api/alarms/remove", alarmFields(a));
     };
     return li;
   }));
   document.getElementById("alarms-empty").hidden = alarms.length > 0;
   document.getElementById("add-fieldset").disabled = alarms.length >= max;
-  if (serverSeconds !== null) {
-    sortAlarms(Math.floor(serverSeconds / 60) % 1440, true);
-  }
 }
 
-// Sends a command; the next status answer shows its effect
+// Sends a command; the next status answer shows its effect. True if the controller accepted it.
 async function post(url, fields) {
+  let ok = false;
   try {
-    await fetch(url, { method: "POST", body: new URLSearchParams(fields) });
+    ok = (await fetch(url, { method: "POST", body: new URLSearchParams(fields) })).ok;
   } catch (e) {
     // Not connected; the dimmed clock already says so
   }
   check(true);
+  return ok;
 }
 
 // Lines the controller printed to its Serial Monitor come along with /status
@@ -149,6 +241,31 @@ function printLog(status) {
   logSince = status.log_next;
 }
 
+// Stops: the Hall position (30 degrees of the sprocket per count) and the saved stops
+function showStops(s) {
+  if (s.pos === undefined) return;
+  document.getElementById("pos").textContent = s.pos;
+  document.getElementById("stop-top").textContent = s.stop_top === null ? "not set" : s.stop_top;
+  document.getElementById("stop-bottom").textContent = s.stop_bottom === null ? "not set" : s.stop_bottom;
+  const moving = s.remaining_ms > 0;
+  for (const b of document.querySelectorAll("[data-jog], [data-stop]")) b.disabled = moving;
+}
+for (const b of document.querySelectorAll("[data-jog]")) {
+  b.onclick = () => post("/api/jog", { d: b.dataset.jog, n: b.dataset.n });
+}
+for (const b of document.querySelectorAll("[data-stop]")) {
+  b.onclick = () => post("/api/stops/" + b.dataset.act, { w: b.dataset.stop });
+}
+
+// One line of health numbers under the page: Wi-Fi signal, free memory, time since the last restart
+function showHealth(s) {
+  if (!s) return;
+  const up = s.uptime_s >= 86400 ? Math.floor(s.uptime_s / 86400) + " d" : s.uptime_s >= 3600 ?
+    Math.floor(s.uptime_s / 3600) + " h" : Math.floor(s.uptime_s / 60) + " min";
+  const wifi = s.rssi === null ? "Wi-Fi off" : `Wi-Fi ${s.rssi} dBm`;
+  document.getElementById("health").textContent = `${wifi} · ${Math.round(s.heap / 1024)} KB free · up ${up}`;
+}
+
 // Ask the controller for the time every second, and switch to the moving
 // page if a run has started (from an alarm, the remote or another browser).
 // A command calls it straight away to show the result; that restarts the one-second cycle.
@@ -158,13 +275,19 @@ async function check() {
   try {
     const status = await (await fetch("/api/status?since=" + logSince, { cache: "no-store" })).json();
     printLog(status);
-    if (status.remaining_ms > 0) {
+    showStops(status);
+    showSpeeds(status);
+    if (status.remaining_ms > 0 && !status.jog) {
       location.replace("/moving");
       return;
     }
     serverSeconds = status.seconds;
     syncedAt = lastAnswer = Date.now();
+    today = status.today;
+    showLocation(status);
     showAlarms(status.alarms, status.max_alarms);
+    showAddHint();
+    showHealth(status.stats);
   } catch (e) {
     // Missed one; try again next time
   }
@@ -188,11 +311,82 @@ for (const link of document.querySelectorAll("[data-move]")) {
   };
 }
 
-document.getElementById("add-form").onsubmit = e => {
+// Add form: the kind (Daily / Once / Sun) decides which fields show
+const addForm = document.getElementById("add-form");
+const addHint = document.getElementById("add-hint");
+const kind = () => new FormData(addForm).get("k");
+const chosenMinute = () => (time.hour % 12 + (time.pm ? 12 : 0)) * 60 + time.minute;
+// The controller's minute of the day now, or null before it has said what time it is
+const nowMinute = () => serverSeconds === null ? null : Math.floor((serverSeconds + (Date.now() - syncedAt) / 1000) / 60) % 1440;
+// A one-time alarm is for the next time the clock shows the chosen time: later today, or tomorrow.
+// Minutes until then (1..1440), or null if the time isn't known yet.
+function onceIn() {
+  const now = nowMinute();
+  return now === null ? null : (chosenMinute() - now + 1440) % 1440 || 1440;
+}
+function fromNow(minutes) {
+  const h = Math.floor(minutes / 60), m = minutes % 60;
+  const parts = [];
+  if (h) parts.push(h + (h === 1 ? " hour" : " hours"));
+  if (m || !h) parts.push(m + (m === 1 ? " minute" : " minutes"));
+  return parts.join(", ") + " from now";
+}
+
+const addChanged = () => { hintError = ""; showAddHint(); };
+const eventSelect = makeDropdown(document.getElementById("event"),
+  Object.entries({ dawn: "Dawn", sunrise: "Sunrise", sunset: "Sunset", dusk: "Dusk" }).map(([value, label]) => ({ value, label })),
+  "sunset", addChanged);
+// Offsets every 5 minutes up to an hour either side, then every 15 up to 3 hours
+const offsetSelect = makeDropdown(document.getElementById("offset"),
+  [...Array(25)].map((_, i) => (i - 12) * 5).concat([75, 90, 105, 120, 135, 150, 165, 180].flatMap(o => [-o, o]))
+    .sort((a, b) => a - b)
+    .map(o => ({ value: o, label: o === 0 ? "At the time" : `${o > 0 ? "+" : "−"} ${Math.abs(o)} min` })),
+  0, addChanged);
+let hintError = "";   // shown until the form changes
+function showAddHint() {
+  const k = kind();
+  for (const el of addForm.querySelectorAll("[data-for]")) el.hidden = !el.dataset.for.split(" ").includes(k);
+  let text = "";
+  if (hintError) {
+    text = hintError;
+  } else if (k === "sun") {
+    const sun = lastSun?.[eventSelect.value];
+    text = !lastLocation ? "Set a location first (Location, below)." : sun === null || sun === undefined
+      ? "That doesn't happen today here." : "Today at " + formatMinute(sun + Number(offsetSelect.value)) + ", then every day.";
+  } else if (k === "once") {
+    const mins = onceIn();
+    text = mins === null ? "Waiting for the controller's time." : fromNow(mins) + ".";
+  } else if (k === "recurring") {
+    text = "Every day at " + formatMinute(chosenMinute()) + ".";
+  }
+  addHint.textContent = text;
+  addHint.classList.toggle("error", !!hintError);
+}
+addForm.addEventListener("input", () => { hintError = ""; showAddHint(); });
+addForm.addEventListener("change", () => { hintError = ""; showAddHint(); });
+
+addForm.onsubmit = async e => {
   e.preventDefault();
   showPicker(false);
-  const minute = (time.hour % 12 + (time.pm ? 12 : 0)) * 60 + time.minute;
-  post("/api/alarms/add", { m: minute, d: new FormData(e.target).get("d") });
+  const k = kind(), d = new FormData(addForm).get("d");
+  let fields;
+  if (k === "sun") {
+    fields = { k, e: eventSelect.value, o: offsetSelect.value, d };
+  } else if (k === "once") {
+    const now = nowMinute();
+    if (now === null || !today) {
+      hintError = "The controller doesn't know the time yet.";
+      showAddHint();
+      return;
+    }
+    fields = { k, date: chosenMinute() > now ? today : addDays(today, 1), m: chosenMinute(), d };
+  } else {
+    fields = { k, m: chosenMinute(), d };
+  }
+  if (!await post("/api/alarms/add", fields)) {
+    hintError = "The controller didn't accept that alarm.";
+    showAddHint();
+  }
 };
 
 // Alarm time picker, in place of the browser's own, whose popup can't be styled.
@@ -206,7 +400,7 @@ const popover = document.getElementById("time-popover");
 const ITEM = 36;
 const CHEVRON = '<svg width="14" height="8" viewBox="0 0 14 8" aria-hidden="true"><path d="M1 7l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-function makeWheel(name, labels, get, set) {
+function makeWheel(container, name, labels, get, set, render) {
   const arrow = (direction, label) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -227,7 +421,7 @@ function makeWheel(name, labels, get, set) {
   const scrollToRow = i => {
     target = Math.max(0, Math.min(labels.length - 1, i));
     set(target);
-    renderTime();
+    render();
     column.scrollTo({ top: target * ITEM, behavior: "smooth" });
   };
   labels.forEach((label, i) => {
@@ -250,24 +444,27 @@ function makeWheel(name, labels, get, set) {
       return;
     }
     set(Math.max(0, Math.min(labels.length - 1, Math.round(column.scrollTop / ITEM))));
-    renderTime();
+    render();
   });
 
   const wheel = document.createElement("div");
   wheel.className = "wheel";
   wheel.append(up, column, down);
-  document.getElementById("wheels").append(wheel);
+  container.append(wheel);
   return { column, up, down, get, last: labels.length - 1 };
 }
 
+const timeWheels = document.getElementById("wheels");
 const wheels = [
-  makeWheel("hour", [...Array(12)].map((_, i) => String(i + 1)), () => time.hour - 1, i => time.hour = i + 1),
-  makeWheel("minute", [...Array(60)].map((_, i) => pad(i)), () => time.minute, i => time.minute = i),
-  makeWheel("AM or PM", ["AM", "PM"], () => time.pm ? 1 : 0, i => time.pm = i === 1),
+  makeWheel(timeWheels, "hour", [...Array(12)].map((_, i) => String(i + 1)), () => time.hour - 1, i => time.hour = i + 1, () => renderTime()),
+  makeWheel(timeWheels, "minute", [...Array(60)].map((_, i) => pad(i)), () => time.minute, i => time.minute = i, () => renderTime()),
+  makeWheel(timeWheels, "AM or PM", ["AM", "PM"], () => time.pm ? 1 : 0, i => time.pm = i === 1, () => renderTime()),
 ];
 
 function renderTime() {
   timeButton.textContent = time.hour + ":" + pad(time.minute) + " " + (time.pm ? "PM" : "AM");
+  hintError = "";
+  showAddHint();
   for (const { column, up, down, get, last } of wheels) {
     [...column.children].forEach((option, i) => option.classList.toggle("selected", i === get()));
     up.disabled = get() === 0;
@@ -287,9 +484,136 @@ function showPicker(open) {
 
 timeButton.onclick = () => showPicker(popover.hidden);
 document.getElementById("time-done").onclick = () => showPicker(false);
-document.addEventListener("click", e => { if (!e.target.closest(".time-picker")) showPicker(false); });
+document.addEventListener("click", e => { if (e.target.closest(".time-picker") !== popover.parentElement) showPicker(false); });
 document.addEventListener("keydown", e => { if (e.key === "Escape") showPicker(false); });
 renderTime();
+
+// Location, for sun alarms: typed in, or "Use my location". The controller's page is plain http, where
+// browsers don't allow location, so that goes to a small https page (locate.html on the project's GitHub
+// Pages site) in this tab. It asks the browser for the location and comes back to /#lat=..&lon=..; the part
+// after # never leaves the browser, so nothing is sent to GitHub.
+const LOCATE_URL = ["localhost", "127.0.0.1"].includes(location.hostname)
+  ? location.origin + "/locate.html"                       // the mock server serves docs/locate.html
+  : "https://yahya-tamur.github.io/blinds/locate.html";
+const latInput = document.getElementById("lat"), lonInput = document.getElementById("lon");
+const locationCard = document.getElementById("location-card");
+
+let shownLocation;
+function showLocation(s) {
+  lastLocation = s.location;
+  lastSun = s.sun;
+  const key = JSON.stringify([s.location, s.sun]);
+  if (key === shownLocation) return;
+  shownLocation = key;
+  const loc = s.location;
+  document.getElementById("location-info").textContent = loc ? `${loc.lat}, ${loc.lon}` : "not set";
+  if (loc && document.activeElement !== latInput && document.activeElement !== lonInput) {
+    latInput.value = loc.lat;
+    lonInput.value = loc.lon;
+  }
+  const sun = s.sun;
+  document.getElementById("sun-today").textContent = !loc ? "" : !sun ? "Sun times show once the controller knows the date." :
+    "Today: " + Object.keys(SUN_NAMES).map(e => `${SUN_NAMES[e].toLowerCase()} ${sun[e] === null ? "–" : formatMinute(sun[e])}`).join(" · ");
+}
+
+function saveLocation(lat, lon) {
+  lat = Math.round(Number(lat) * 10) / 10;
+  lon = Math.round(Number(lon) * 10) / 10;
+  if (!(Math.abs(lat) <= 90 && Math.abs(lon) <= 180)) return;
+  latInput.value = lat;
+  lonInput.value = lon;
+  locationCard.open = true;
+  post("/api/location", { lat, lon });
+}
+
+document.getElementById("location-form").onsubmit = e => {
+  e.preventDefault();
+  saveLocation(latInput.value, lonInput.value);
+  document.activeElement.blur();
+};
+
+document.getElementById("locate").onclick = () => {
+  location.href = LOCATE_URL + "#return=" + encodeURIComponent(location.origin + "/");
+};
+// Back from locate.html: a new page load, or just a new #... if the browser kept the page
+function locationFromHash() {
+  const back = new URLSearchParams(location.hash.slice(1));
+  if (back.has("lat") && back.has("lon")) {
+    history.replaceState(null, "", location.pathname);
+    saveLocation(back.get("lat"), back.get("lon"));
+  }
+}
+window.addEventListener("hashchange", locationFromHash);
+locationFromHash();
+
+// Speed dials: drag around (one sweep = 0.1 to 8.0 rev/s), or arrow keys / mouse wheel for 0.1 steps.
+// A new speed is saved when the drag ends (or half a second after the last key or wheel step); until then
+// the controller's answers don't overwrite it.
+const SVG = "http://www.w3.org/2000/svg";
+const A0 = -135, A1 = 135, R = 46, C = 56, MIN = 0.1, MAX = 8;
+const arcPoint = a => { const r = (a - 90) * Math.PI / 180; return [C + R * Math.cos(r), C + R * Math.sin(r)]; };
+const dials = [...document.querySelectorAll(".knob-tile")].map(tile => {
+  const k = { dir: tile.dataset.dir, value: 5, busy: false, timer: null };
+  tile.insertAdjacentHTML("beforeend",
+    `<svg class="knob" viewBox="0 0 112 104" role="slider" tabindex="0" aria-label="${k.dir} speed, rev/s"
+       aria-valuemin="${MIN}" aria-valuemax="${MAX}">
+       <path class="track"/><path class="arc"/><circle class="dot" r="7"/>
+       <text class="knob-value" x="${C}" y="${C + 2}"></text><text class="knob-unit" x="${C}" y="${C + 20}">rev/s</text>
+     </svg>`);
+  const svg = tile.querySelector("svg"), arc = svg.querySelector(".arc"), dot = svg.querySelector(".dot");
+  const text = svg.querySelector(".knob-value");
+  const [x0, y0] = arcPoint(A0), [x1, y1] = arcPoint(A1);
+  svg.querySelector(".track").setAttribute("d", `M${x0} ${y0}A${R} ${R} 0 1 1 ${x1} ${y1}`);
+  k.render = () => {
+    const a = A0 + (k.value - MIN) / (MAX - MIN) * (A1 - A0), [x, y] = arcPoint(a);
+    arc.setAttribute("d", `M${x0} ${y0}A${R} ${R} 0 ${a - A0 > 180 ? 1 : 0} 1 ${x} ${y}`);
+    dot.setAttribute("cx", x);
+    dot.setAttribute("cy", y);
+    text.textContent = k.value.toFixed(1);
+    svg.setAttribute("aria-valuenow", k.value.toFixed(1));
+    showSpeedInfo();
+  };
+  const set = v => { k.value = Math.min(MAX, Math.max(MIN, Math.round(v * 10) / 10)); k.render(); };
+  const save = () => { k.busy = false; post("/api/speed", { d: k.dir, v: k.value.toFixed(1) }); };
+  const saveSoon = () => { k.busy = true; clearTimeout(k.timer); k.timer = setTimeout(save, 500); };
+  const drag = e => {
+    const r = svg.getBoundingClientRect(), scale = r.width / 112;
+    let a = Math.atan2(e.clientX - r.left - C * scale, -(e.clientY - r.top - C * scale)) * 180 / Math.PI;
+    if (a > A1 || a < A0) a = (k.value - MIN) / (MAX - MIN) > 0.5 ? A1 : A0;   // in the gap: the nearer end
+    set(MIN + (a - A0) / (A1 - A0) * (MAX - MIN));
+  };
+  svg.addEventListener("pointerdown", e => {
+    e.preventDefault();
+    svg.setPointerCapture(e.pointerId);
+    k.busy = true;
+    clearTimeout(k.timer);
+    drag(e);
+    svg.onpointermove = drag;
+  });
+  const end = () => { if (svg.onpointermove) { svg.onpointermove = null; save(); } };
+  svg.addEventListener("pointerup", end);
+  svg.addEventListener("pointercancel", end);
+  svg.addEventListener("wheel", e => { e.preventDefault(); set(k.value - Math.sign(e.deltaY) * 0.1); saveSoon(); },
+                       { passive: false });
+  svg.addEventListener("keydown", e => {
+    const step = { ArrowUp: 0.1, ArrowRight: 0.1, ArrowDown: -0.1, ArrowLeft: -0.1, PageUp: 1, PageDown: -1 }[e.key];
+    const to = { Home: MIN, End: MAX }[e.key];
+    if (step === undefined && to === undefined) return;
+    e.preventDefault();
+    set(to ?? k.value + step);
+    saveSoon();
+  });
+  k.set = v => { if (!k.busy && v !== undefined) set(v); };   // from the controller
+  return k;
+});
+function showSpeedInfo() {
+  if (dials.length < 2) return;
+  document.getElementById("speed-info").textContent = `Up ${dials[0].value.toFixed(1)} · Down ${dials[1].value.toFixed(1)}`;
+}
+dials.forEach(k => k.render());
+function showSpeeds(s) {
+  for (const k of dials) k.set(k.dir === "up" ? s.speed_up : s.speed_down);
+}
 </script>
 </body>
 </html>

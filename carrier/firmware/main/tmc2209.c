@@ -4,6 +4,8 @@
 #include "esp_err.h"
 #include "board.h"
 #include "tmc2209.h"
+#include "logbuf.h"
+#define printf logbuf_printf   // setup messages also reach the web log
 
 // CRC from the TMC2209 datasheet (polynomial x^8 + x^2 + x + 1, bits taken LSB first)
 static uint8_t crc8(const uint8_t *data, int len)

@@ -4,9 +4,9 @@ set(LOCAL_REQUIRES "")    # extra components for the local tests, set in local/t
 include("${CMAKE_CURRENT_LIST_DIR}/../local/tests/local.cmake" OPTIONAL)
 
 idf_component_register(
-    SRCS ${LOCAL_TESTS} "main.c" "tmc2209.c" "tests/bringup.c" "tests/ir.c" "tests/motor.c" "tests/hall.c"
-         "app.c" "logbuf.c" "motor_steps.c" "switch_input.c" "remote.c" "clock.c" "alarms.c" "wifi.c" "web.c"
+    SRCS ${LOCAL_TESTS} "main.c" "tmc2209.c" "tests/bringup.c" "tests/bringup_wifi.c" "tests/ir.c" "tests/motor.c" "tests/hall.c"
+         "app.c" "logbuf.c" "motor_steps.c" "switch_input.c" "remote.c" "clock.c" "alarms.c" "sun.c" "wifi.c" "web.c" "stats.c" "ota.c" "travel.c"
     INCLUDE_DIRS "."
-    EMBED_TXTFILES "../web/index.html" "../web/moving.html" "../web/style.css" "../web/favicon.svg"
+    EMBED_TXTFILES "../web/index.html" "../web/moving.html" "../web/style.css" "../web/favicon.svg" "../web/update.html" "../web/dropdown.js"
     PRIV_REQUIRES esp_driver_gpio esp_driver_uart esp_driver_rmt esp_driver_i2c esp_driver_ledc esp_driver_gptimer esp_driver_pcnt
-                  esp_timer nvs_flash esp_wifi esp_netif esp_event esp_http_server ${LOCAL_REQUIRES})
+                  esp_timer nvs_flash esp_wifi esp_netif esp_event esp_http_server app_update esp_app_format ${LOCAL_REQUIRES})

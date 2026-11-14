@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set Controller Location</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<style>
+/* Opened by the controller's own page ("Use my location"). The controller serves plain http on the home network,
+   where browsers don't allow location, so this https page asks for it and goes back to that page with it after
+   the # (#lat=..&lon=..), which browsers never send to a server. There is no server code here. */
+:root { --bg: #121614; --surface: #1a1f1c; --ink: #e5e9e3; --muted: #98a29c; --line: #2b322e; --accent: #f0b23a;
+        --danger: #e0676d; color-scheme: dark; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 26rem; margin: 0 auto; padding: 32px 16px; }
+h1 { font-size: 1.3rem; margin: 0 0 8px; }
+p { color: var(--muted); margin: 0 0 16px; }
+.box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.coords { font-size: 1.6rem; font-variant-numeric: tabular-nums; color: var(--ink); margin: 0 0 4px; }
+.small { font-size: .9rem; }
+.error { color: var(--danger); }
+a { color: var(--accent); }
+button { display: block; width: 100%; padding: 14px; margin-bottom: 10px; border: 0; border-radius: 10px; font: inherit;
+         font-weight: 700; cursor: pointer; background: var(--line); color: var(--ink); }
+button.primary { background: var(--accent); color: #2a1d00; }
+button:disabled { opacity: .5; cursor: default; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Set the controller's location</h1>
+  <p>Used for sunrise and sunset alarms. Rounded to one decimal place (about 10 km).</p>
+
+  <div class="box" id="found" hidden>
+    <p class="coords" id="coords"></p>
+    <p class="small"><span id="accuracy"></span> &middot; <a id="map" target="_blank" rel="noopener">Check on a map</a></p>
+    <button class="primary" id="send"></button>
+  </div>
+  <p id="status"></p>
+  <button id="retry" hidden>Try again</button>
+  <button id="back" hidden>Back without sending</button>
+
+  <p class="small">Your location goes only from this browser to your controller. This page is static: nothing is sent
+    back to the site it came from.</p>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const status = (text, error) => { $("status").textContent = text; $("status").className = error ? "error" : ""; };
+
+// Where to send the location: the controller page that opened this one, given as #return=<its address>.
+// Only addresses on a home network are accepted, so another website can't use this page to learn where you are.
+function homeNetwork(url) {
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const h = url.hostname;
+  if (h === "localhost" || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  if (/\.(lan|local|home|internal|home\.arpa)$/.test(h)) return true;
+  return !h.includes(".") && !h.includes(":");   // a bare name like "blinds"
+}
+let target = null;
+try {
+  const r = new URLSearchParams(location.hash.slice(1)).get("return");
+  if (r && homeNetwork(new URL(r))) target = new URL(r);
+} catch (e) {}
+
+let lat, lon;
+function locate() {
+  $("retry").hidden = true;
+  if (!navigator.geolocation) return status("This browser can't give a location. Type it into the controller's page instead.", true);
+  status("Asking the browser for your location…");
+  navigator.geolocation.getCurrentPosition(p => {
+    lat = Math.round(p.coords.latitude * 10) / 10;
+    lon = Math.round(p.coords.longitude * 10) / 10;
+    $("coords").textContent = `${lat}, ${lon}`;
+    $("accuracy").textContent = `measured to ±${p.coords.accuracy < 1000 ? Math.round(p.coords.accuracy) + " m" : Math.round(p.coords.accuracy / 1000) + " km"}`;
+    $("map").href = `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=10/${lat}/${lon}`;
+    $("found").hidden = false;
+    status("");
+  }, e => {
+    status(e.code === e.PERMISSION_DENIED
+      ? "Location access was refused. Allow it for this site in the browser's settings, or type the location into the controller's page."
+      : "The browser couldn't find your location (a computer without GPS needs the internet for this). " +
+        "You can also type it into the controller's page.", true);
+    $("retry").hidden = false;
+  }, { enableHighAccuracy: false, timeout: 20000, maximumAge: 600000 });
+}
+
+// Back to the controller's page, with the location after the #
+$("send").onclick = () => {
+  location.href = new URL(`#lat=${lat}&lon=${lon}`, target).href;
+};
+$("retry").onclick = locate;
+$("back").onclick = () => { location.href = target.href; };
+
+if (target) {
+  $("send").textContent = "Send to " + target.host;
+  $("back").hidden = false;
+  locate();
+} else {
+  status("Open this page with the \"Use my location\" button on your controller's page.", true);
+}
+</script>
+</body>
+</html>

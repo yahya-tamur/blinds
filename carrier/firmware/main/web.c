@@ -9,6 +9,10 @@
 #include "events.h"
 #include "logbuf.h"
 #include "motor.h"
+#include "ota.h"
+#include "stats.h"
+#include "sun.h"
+#include "travel.h"
 #include "web.h"
 
 static const char *TAG = "web";
@@ -21,6 +25,8 @@ EMBEDDED(index_html)
 EMBEDDED(moving_html)
 EMBEDDED(style_css)
 EMBEDDED(favicon_svg)
+EMBEDDED(update_html)
+EMBEDDED(dropdown_js)
 
 typedef struct {
     const char *uri, *type, *start, *end;
@@ -29,7 +35,9 @@ typedef struct {
 static const page_t pages[] = {
     { "/", "text/html", index_html_start, index_html_end },
     { "/moving", "text/html", moving_html_start, moving_html_end },
+    { "/update", "text/html", update_html_start, update_html_end },
     { "/style.css", "text/css", style_css_start, style_css_end },
+    { "/dropdown.js", "text/javascript", dropdown_js_start, dropdown_js_end },
     { "/favicon.svg", "image/svg+xml", favicon_svg_start, favicon_svg_end },
     { "/favicon.ico", "image/svg+xml", favicon_svg_start, favicon_svg_end },   // some browsers ask regardless
 };
@@ -70,7 +78,7 @@ static void out_write(out_t *o, const char *s, size_t n)
 
 static void out_printf(out_t *o, const char *fmt, ...)
 {
-    char text[64];
+    char text[160];
     va_list args;
     va_start(args, fmt);
     int n = vsnprintf(text, sizeof text, fmt, args);
@@ -121,15 +129,90 @@ static esp_err_t api_status(httpd_req_t *req)
     int dir = motor_dir();
     out_printf(&o, ",\"dir\":\"%s\",\"remaining_ms\":%lu,\"total_ms\":%lu", dir > 0 ? "up" : dir < 0 ? "down" : "",
                (unsigned long)motor_remaining_ms(), (unsigned long)motor_total_ms());
+    out_printf(&o, ",\"jog\":%s,\"pos\":%d", travel_is_jog() ? "true" : "false", travel_pos());
+    out_printf(&o, ",\"irms\":%.2f,\"mode\":\"%s\",\"speed_up\":%.1f,\"speed_down\":%.1f", motor_irms(),
+               motor_spreadcycle() ? "spread" : "stealth", travel_speed(1), travel_speed(-1));
+    uint32_t drv;
+    if (travel_last_driver(&drv))
+        out_printf(&o, ",\"driver\":{\"current\":%lu,\"open_a\":%s,\"open_b\":%s,\"fault\":%s}",
+                   (unsigned long)(drv >> 16 & 0x1F), drv & (1u << 6) ? "true" : "false", drv & (1u << 7) ? "true" : "false",
+                   drv & 0x3E ? "true" : "false");
+    else out_printf(&o, ",\"driver\":null");
+    int top, bottom;
+    bool has_top = travel_get_stop(STOP_TOP, &top), has_bottom = travel_get_stop(STOP_BOTTOM, &bottom);
+    if (has_top) out_printf(&o, ",\"stop_top\":%d", top);
+    else out_printf(&o, ",\"stop_top\":null");
+    if (has_bottom) out_printf(&o, ",\"stop_bottom\":%d", bottom);
+    else out_printf(&o, ",\"stop_bottom\":null");
+
+    // Today's date and sun times, and each alarm's next time, all in the controller's local time
+    time_t now = time(NULL);
+    bool known = clock_valid();
+    if (known) {
+        struct tm lt;
+        localtime_r(&now, &lt);
+        out_printf(&o, ",\"today\":\"%04d-%02d-%02d\"", lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday);
+    } else {
+        out_printf(&o, ",\"today\":null");
+    }
+    float lat, lon;
+    if (sun_location(&lat, &lon)) {
+        out_printf(&o, ",\"location\":{\"lat\":%.1f,\"lon\":%.1f},\"sun\":", lat, lon);
+        if (known) {
+            for (int e = 0; e < SUN_EVENTS; e++) {
+                time_t t;
+                out_printf(&o, "%s\"%s\":", e ? "," : "{", sun_name(e));
+                if (sun_time(now, e, &t)) {
+                    struct tm st;
+                    localtime_r(&t, &st);
+                    out_printf(&o, "%d", st.tm_hour * 60 + st.tm_min);
+                } else {
+                    out_printf(&o, "null");
+                }
+            }
+            out_write(&o, "}", 1);
+        } else {
+            out_printf(&o, "null");
+        }
+    } else {
+        out_printf(&o, ",\"location\":null,\"sun\":null");
+    }
 
     alarm_t list[MAX_ALARMS];
     int n = alarms_list(list);
     out_printf(&o, ",\"max_alarms\":%d,\"alarms\":[", MAX_ALARMS);
     for (int i = 0; i < n; i++) {
-        out_printf(&o, "%s{\"minute\":%d,\"dir\":\"%s\"}", i ? "," : "", list[i].minute, list[i].dir > 0 ? "up" : "down");
+        const alarm_t *a = &list[i];
+        out_printf(&o, "%s{\"kind\":\"%s\",\"dir\":\"%s\"", i ? "," : "", alarms_kind_name(a->kind), a->dir > 0 ? "up" : "down");
+        if (a->kind == ALARM_RECURRING) out_printf(&o, ",\"minute\":%d", a->minute);
+        else if (a->kind == ALARM_ONCE) out_printf(&o, ",\"at\":%lld", (long long)a->at);
+        else out_printf(&o, ",\"event\":\"%s\",\"offset\":%d", sun_name(a->event), a->minute);
+        time_t next;
+        if (known && alarms_next(a, now, &next)) {
+            struct tm nt;
+            localtime_r(&next, &nt);
+            out_printf(&o, ",\"next\":%lld,\"when\":\"%04d-%02d-%02d %02d:%02d\"}", (long long)next, nt.tm_year + 1900,
+                       nt.tm_mon + 1, nt.tm_mday, nt.tm_hour, nt.tm_min);
+        } else {
+            out_printf(&o, ",\"next\":null,\"when\":null}");
+        }
     }
 
-    out_printf(&o, "],\"log_next\":%lu,\"log\":[", (unsigned long)next);
+    health_t st;
+    health_get(&st);
+    out_printf(&o, "],\"stats\":{\"uptime_s\":%lu,\"heap\":%lu", (unsigned long)st.uptime_s, (unsigned long)st.heap_free);
+    out_printf(&o, ",\"heap_min\":%lu,\"heap_largest\":%lu", (unsigned long)st.heap_min, (unsigned long)st.heap_largest);
+    if (st.wifi) out_printf(&o, ",\"rssi\":%d", st.rssi);
+    else out_printf(&o, ",\"rssi\":null");
+    out_printf(&o, ",\"updating\":%s,\"reset\":", ota_busy() ? "true" : "false");
+    out_json_string(&o, st.reset);
+    out_write(&o, ",\"before_reset\":", 16);
+    out_json_string(&o, motor_breadcrumb());
+    out_write(&o, ",\"version\":", 11);
+    out_json_string(&o, st.version);
+    out_write(&o, "}", 1);
+
+    out_printf(&o, ",\"log_next\":%lu,\"log\":[", (unsigned long)next);
     bool first = true;
     for (uint32_t i = since; i < next; i++) {
         char line[LOG_LINE_LENGTH];
@@ -165,11 +248,43 @@ static int body_dir(const char *body)
     return !strcmp(d, "up") ? 1 : !strcmp(d, "down") ? -1 : 0;
 }
 
-static int body_minute(const char *body)
+// An alarm from the body (see web.h): k=recurring|once|sun (recurring if missing), d=up|down, and
+// recurring: m=<minutes since midnight>; once: at=<Unix time>, or date=YYYY-MM-DD&m=<minutes> in local time;
+// sun: e=dawn|sunrise|sunset|dusk&o=<offset minutes>. False if a field is missing or unreadable.
+static bool body_alarm(const char *body, alarm_t *a)
 {
-    char m[8];
-    if (httpd_query_key_value(body, "m", m, sizeof m) != ESP_OK) return -1;
-    return atoi(m);
+    char v[16];
+    memset(a, 0, sizeof *a);
+    a->dir = body_dir(body);
+    a->kind = ALARM_RECURRING;
+    if (httpd_query_key_value(body, "k", v, sizeof v) == ESP_OK) {
+        a->kind = !strcmp(v, "recurring") ? ALARM_RECURRING : !strcmp(v, "once") ? ALARM_ONCE : !strcmp(v, "sun") ? ALARM_SUN : -1;
+    }
+    bool has_m = httpd_query_key_value(body, "m", v, sizeof v) == ESP_OK;
+    int m = has_m ? atoi(v) : -1;
+    if (a->kind == ALARM_RECURRING) {
+        a->minute = m;
+        return has_m;
+    }
+    if (a->kind == ALARM_ONCE) {
+        if (httpd_query_key_value(body, "at", v, sizeof v) == ESP_OK) {
+            a->at = strtoll(v, NULL, 10);
+            return true;
+        }
+        int y, mo, d;
+        if (!has_m || m < 0 || m >= 24 * 60 || httpd_query_key_value(body, "date", v, sizeof v) != ESP_OK ||
+            sscanf(v, "%d-%d-%d", &y, &mo, &d) != 3) return false;
+        struct tm lt = { .tm_year = y - 1900, .tm_mon = mo - 1, .tm_mday = d, .tm_hour = m / 60, .tm_min = m % 60, .tm_isdst = -1 };
+        a->at = mktime(&lt);
+        return a->at > 0;
+    }
+    if (a->kind == ALARM_SUN) {
+        if (httpd_query_key_value(body, "e", v, sizeof v) != ESP_OK) return false;
+        a->event = sun_from_name(v);
+        a->minute = httpd_query_key_value(body, "o", v, sizeof v) == ESP_OK ? atoi(v) : 0;
+        return a->event >= 0;
+    }
+    return false;
 }
 
 static esp_err_t done(httpd_req_t *req, bool ok)
@@ -193,27 +308,114 @@ static esp_err_t api_cancel(httpd_req_t *req)
     return done(req, true);
 }
 
-static esp_err_t api_alarm_add(httpd_req_t *req)
+// d=up|down&n=<Hall counts, 1..48>: a short move for setting the stops
+static esp_err_t api_jog(httpd_req_t *req)
+{
+    char body[32], n[8];
+    int dir = 0, counts = 0;
+    if (read_body(req, body, sizeof body)) {
+        dir = body_dir(body);
+        if (httpd_query_key_value(body, "n", n, sizeof n) == ESP_OK) counts = atoi(n);
+    }
+    bool ok = dir && counts >= 1 && counts <= 48;
+    if (ok) event_post_arg(dir > 0 ? CMD_JOG_UP : CMD_JOG_DOWN, SRC_WEB, counts);
+    return done(req, ok);
+}
+
+// i=<run current, A>&m=spread|stealth (either optional): motor settings, saved
+static esp_err_t api_motor_settings(httpd_req_t *req)
+{
+    char body[48], v[12];
+    if (!read_body(req, body, sizeof body)) return done(req, false);
+    float irms = -1;
+    int spread = -1;
+    if (httpd_query_key_value(body, "i", v, sizeof v) == ESP_OK) irms = strtof(v, NULL);
+    if (httpd_query_key_value(body, "m", v, sizeof v) == ESP_OK) spread = !strcmp(v, "spread") ? 1 : !strcmp(v, "stealth") ? 0 : -1;
+    motor_set(irms, spread);
+    return done(req, true);
+}
+
+// d=up|down&v=<rev/s>: the run speed for that direction, saved
+static esp_err_t api_speed(httpd_req_t *req)
+{
+    char body[32], v[12];
+    int dir = 0;
+    float rps = 0;
+    if (read_body(req, body, sizeof body)) {
+        dir = body_dir(body);
+        if (httpd_query_key_value(body, "v", v, sizeof v) == ESP_OK) rps = strtof(v, NULL);
+    }
+    bool ok = dir && rps >= 0.1f && rps <= 8.0f;
+    if (ok) travel_set_speed(dir, rps);
+    return done(req, ok);
+}
+
+// w=top|bottom: STOP_TOP or STOP_BOTTOM, or -1
+static int body_which(const char *body)
+{
+    char w[8];
+    if (httpd_query_key_value(body, "w", w, sizeof w) != ESP_OK) return -1;
+    return !strcmp(w, "top") ? STOP_TOP : !strcmp(w, "bottom") ? STOP_BOTTOM : -1;
+}
+
+static esp_err_t api_stop_set(httpd_req_t *req)
 {
     char body[32];
-    bool ok = read_body(req, body, sizeof body) && alarms_add(body_minute(body), body_dir(body));
+    int w = read_body(req, body, sizeof body) ? body_which(body) : -1;
+    if (w >= 0) event_post_arg(CMD_SET_STOP, SRC_WEB, w);
+    return done(req, w >= 0);
+}
+
+static esp_err_t api_stop_clear(httpd_req_t *req)
+{
+    char body[32];
+    int w = read_body(req, body, sizeof body) ? body_which(body) : -1;
+    if (w >= 0) event_post_arg(CMD_CLEAR_STOP, SRC_WEB, w);
+    return done(req, w >= 0);
+}
+
+static esp_err_t api_alarm_add(httpd_req_t *req)
+{
+    char body[96];
+    alarm_t a;
+    bool ok = read_body(req, body, sizeof body) && body_alarm(body, &a) && alarms_add(&a);
     return done(req, ok);
 }
 
 static esp_err_t api_alarm_remove(httpd_req_t *req)
 {
-    char body[32];
+    char body[96];
+    alarm_t a;
     // Already gone counts as done: another browser may have removed it first
-    if (read_body(req, body, sizeof body)) alarms_remove(body_minute(body), body_dir(body));
+    if (read_body(req, body, sizeof body) && body_alarm(body, &a)) alarms_remove(&a);
     return done(req, true);
 }
+
+// lat=<degrees north>&lon=<degrees east>, kept to one decimal place; clear=1 forgets it
+static esp_err_t api_location(httpd_req_t *req)
+{
+    char body[48], lat[12], lon[12];
+    if (!read_body(req, body, sizeof body)) return done(req, false);
+    if (httpd_query_key_value(body, "clear", lat, sizeof lat) == ESP_OK) {
+        sun_clear_location();
+        return done(req, true);
+    }
+    bool ok = httpd_query_key_value(body, "lat", lat, sizeof lat) == ESP_OK &&
+              httpd_query_key_value(body, "lon", lon, sizeof lon) == ESP_OK &&
+              sun_set_location(strtof(lat, NULL), strtof(lon, NULL));
+    return done(req, ok);
+}
+
+static httpd_handle_t server;
+
+httpd_handle_t web_server(void) { return server; }
 
 void web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 24;
+    cfg.stack_size = 6144;         // the update handler needs more than the default 4 KB
     cfg.lru_purge_enable = true;   // a phone that keeps connections open can't lock others out
-    httpd_handle_t server;
     if (httpd_start(&server, &cfg) != ESP_OK) {
         ESP_LOGE(TAG, "Couldn't start the web server");
         return;
@@ -228,6 +430,13 @@ void web_start(void)
         { .uri = "/api/cancel", .method = HTTP_POST, .handler = api_cancel },
         { .uri = "/api/alarms/add", .method = HTTP_POST, .handler = api_alarm_add },
         { .uri = "/api/alarms/remove", .method = HTTP_POST, .handler = api_alarm_remove },
+        { .uri = "/api/location", .method = HTTP_POST, .handler = api_location },
+        { .uri = "/api/jog", .method = HTTP_POST, .handler = api_jog },
+        { .uri = "/api/motor/settings", .method = HTTP_POST, .handler = api_motor_settings },
+        { .uri = "/api/speed", .method = HTTP_POST, .handler = api_speed },
+        { .uri = "/api/stops/set", .method = HTTP_POST, .handler = api_stop_set },
+        { .uri = "/api/stops/clear", .method = HTTP_POST, .handler = api_stop_clear },
     };
     for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
+    ota_register(server);
 }

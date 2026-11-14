@@ -1,8 +1,15 @@
 #pragma once
 #include <stdint.h>
+#include <stdio.h>
+#include "logbuf.h"
+
+// Test output also goes to the web log (when logbuf_init has run, as in test_bringup_wifi)
+#define printf logbuf_printf
+#define vprintf logbuf_vprintf
 #include "driver/pulse_cnt.h"
 
 void test_bringup(void);      // a newly built board: every part in turn, then a pass/fail list
+void test_bringup_wifi(void); // the same over Wi-Fi: joins the network, then POST /api/bringup runs it; output in /api/status
 
 // STEP pulse helpers (tests/motor.c); step_init leaves the relay on
 void step_init(void);

@@ -28,5 +28,5 @@
 // Hold current is a quarter of that; disable the driver (EN high) between moves if nothing needs holding.
 // The relay only switches while EN is high, so its contacts never break the coil current:
 // EN high, relay on, RELAY_SETTLE_MS, EN low ... run ... EN high, RELAY_SETTLE_MS, relay off.
-#define RELAY_SETTLE_MS 10   // HFD2 operate/release time is under 5 ms
+#define RELAY_SETTLE_MS 30   // HFD2 operate/release time is under 5 ms; 30 for margin (contacts settled, coil current gone)
 #define MOTOR_IRMS   1.7f
