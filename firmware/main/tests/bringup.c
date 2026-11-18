@@ -201,7 +201,7 @@ static void check_inputs(void)
         r = ir_receive(1000);
         other |= r == 0;
     }
-    report("IR remote", r > 0, r > 0 ? "NEC code received (address above; IR_ADDRESS in app_config.h)" :
+    report("IR remote", r > 0, r > 0 ? "NEC code received (set the buttons up on the web page: Set up remote)" :
            other ? "frames seen but none decoded as NEC (other protocol, or a weak signal)" : "nothing received");
 }
 

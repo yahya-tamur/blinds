@@ -63,7 +63,7 @@ static void save(void)
 {
     nvs_handle_t h;
     if (nvs_open("blinds", NVS_READWRITE, &h) != ESP_OK) return;
-    if (nvs_set_blob(h, "alarms2", alarms, count * sizeof(alarm_t)) != ESP_OK || nvs_commit(h) != ESP_OK) {
+    if (nvs_set_blob(h, "alarms3", alarms, count * sizeof(alarm_t)) != ESP_OK || nvs_commit(h) != ESP_OK) {
         ESP_LOGE(TAG, "Couldn't save the alarms");
     }
     nvs_close(h);
@@ -76,10 +76,25 @@ void alarms_init(void)
     if (nvs_open("blinds", NVS_READWRITE, &h) != ESP_OK) return;
     alarm_t stored[MAX_ALARMS];
     size_t size = sizeof stored;
-    if (nvs_get_blob(h, "alarms2", stored, &size) == ESP_OK) {
+    // Before skipping, alarms were saved as "alarms2" without skip_at
+    typedef struct { int8_t kind, dir, event; int16_t minute; int64_t at; } alarm2_t;
+    alarm2_t old2[MAX_ALARMS];
+    size_t size2 = sizeof old2;
+    if (nvs_get_blob(h, "alarms3", stored, &size) == ESP_OK) {
         for (size_t i = 0; i < size / sizeof(alarm_t); i++) {
             if (valid(&stored[i])) alarms[count++] = stored[i];
         }
+    } else if (nvs_get_blob(h, "alarms2", old2, &size2) == ESP_OK) {
+        for (size_t i = 0; i < size2 / sizeof(alarm2_t); i++) {
+            alarm_t a = { .kind = old2[i].kind, .dir = old2[i].dir, .event = old2[i].event, .minute = old2[i].minute,
+                          .at = old2[i].at };
+            if (valid(&a)) alarms[count++] = a;
+        }
+        nvs_close(h);
+        save();
+        if (nvs_open("blinds", NVS_READWRITE, &h) != ESP_OK) return;
+        nvs_erase_key(h, "alarms2");
+        nvs_commit(h);
     } else {
         // Firmware before one-time and sun alarms saved daily alarms only, as {minute, dir}: they become recurring
         struct { int16_t minute; int8_t dir; } old[MAX_ALARMS];
@@ -123,6 +138,7 @@ bool alarms_add(const alarm_t *a)
     if (copy.kind != ALARM_SUN) copy.event = 0;          // unused fields zero, so remove can match whole records
     if (copy.kind != ALARM_ONCE) copy.at = 0;
     if (copy.kind == ALARM_ONCE) copy.minute = 0;
+    copy.skip_at = 0;
     xSemaphoreTake(lock, portMAX_DELAY);
     int i = 0;
     while (i < count && !same_slot(&alarms[i], &copy)) i++;
@@ -141,6 +157,15 @@ bool alarms_add(const alarm_t *a)
     return ok;
 }
 
+// The alarm matching a (by value, so an out-of-date page can't pick the wrong one), or -1
+static int find(const alarm_t *a)
+{
+    int i = 0;
+    while (i < count && !(same_slot(&alarms[i], a) && alarms[i].dir == a->dir &&
+                          (a->kind != ALARM_SUN || alarms[i].minute == a->minute))) i++;
+    return i < count ? i : -1;
+}
+
 static void remove_at(int i)
 {
     memmove(&alarms[i], &alarms[i + 1], (count - i - 1) * sizeof(alarm_t));
@@ -152,10 +177,8 @@ bool alarms_remove(const alarm_t *a)
 {
     if (!lock) return false;
     xSemaphoreTake(lock, portMAX_DELAY);
-    int i = 0;
-    while (i < count && !(same_slot(&alarms[i], a) && alarms[i].dir == a->dir &&
-                          (a->kind != ALARM_SUN || alarms[i].minute == a->minute))) i++;
-    bool found = i < count;
+    int i = find(a);
+    bool found = i >= 0;
     if (found) {
         remove_at(i);
         save();
@@ -167,6 +190,32 @@ bool alarms_remove(const alarm_t *a)
         ESP_LOGI(TAG, "Removed %s", text);
     }
     return found;
+}
+
+bool alarms_skip(const alarm_t *a, bool on)
+{
+    if (!lock || a->kind == ALARM_ONCE) return false;
+    time_t now = time(NULL), next = 0;
+    if (on && (!clock_valid() || !alarms_next(a, now, &next))) return false;
+    xSemaphoreTake(lock, portMAX_DELAY);
+    int i = find(a);
+    if (i >= 0) {
+        alarms[i].skip_at = on ? next : 0;
+        save();
+    }
+    xSemaphoreGive(lock);
+    if (i < 0) return false;
+    char text[48];
+    describe(a, text, sizeof text);
+    if (on) {
+        struct tm lt;
+        localtime_r(&next, &lt);
+        ESP_LOGI(TAG, "%s skips %04d-%02d-%02d %02d:%02d once", text, lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday,
+                 lt.tm_hour, lt.tm_min);
+    } else {
+        ESP_LOGI(TAG, "%s no longer skips", text);
+    }
+    return true;
 }
 
 // Noon on the local date `days` days after the one containing `now`
@@ -224,6 +273,13 @@ bool alarms_next(const alarm_t *a, time_t now, time_t *out)
     return false;
 }
 
+bool alarms_next_run(const alarm_t *a, time_t now, time_t *out)
+{
+    if (!alarms_next(a, now, out)) return false;
+    if (a->skip_at && *out / 60 == a->skip_at / 60) return alarms_next(a, *out, out);
+    return true;
+}
+
 int alarms_check(void)
 {
     clock_poll();
@@ -254,12 +310,26 @@ int alarms_check(void)
             changed = true;
             continue;
         }
-        if (a->kind == ALARM_RECURRING && a->minute == local_minute) recurring = a->dir;
+        alarm_t *m = &alarms[i];
+        bool due = a->kind == ALARM_RECURRING && a->minute == local_minute;
         if (a->kind == ALARM_SUN) {
             for (int days = -1; days <= 1; days++) {
                 time_t t;
-                if (sun_alarm_time(a, now, days, &t) && t / 60 == minute) sun[a->event] = a->dir;
+                if (sun_alarm_time(a, now, days, &t) && t / 60 == minute) due = true;
             }
+        }
+        if (due && m->skip_at && m->skip_at / 60 == minute) {
+            char text[48];
+            describe(a, text, sizeof text);
+            ESP_LOGI(TAG, "Skipped %s this once", text);
+            m->skip_at = 0;
+            changed = true;
+        } else if (due) {
+            if (a->kind == ALARM_RECURRING) recurring = a->dir;
+            else sun[a->event] = a->dir;
+        } else if (m->skip_at && m->skip_at / 60 < minute) {
+            m->skip_at = 0;            // its time went by unseen (board off, or the sun time moved): forget it
+            changed = true;
         }
         i++;
     }

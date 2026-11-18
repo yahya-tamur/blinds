@@ -11,12 +11,7 @@
 #define SWITCH_DOWN_PIN   PIN_SW2
 #define SWITCH_SETTLE_MS  30      // a position must read the same this long to count
 
-// IR remote (NEC). IR_ADDRESS -1 accepts any remote; set it to the remote's address
-// (shown by test_bringup) so other remotes in the house are ignored.
-#define IR_ADDRESS        -1
-#define IR_CMD_UP         0x07
-#define IR_CMD_DOWN       0x15
-#define IR_CMD_CANCEL     0x09
+// IR remote buttons are set up on the web page (Set up remote) and saved on the board (remote.c).
 
 #define MAX_ALARMS        20
 
@@ -43,4 +38,10 @@
 #define MOTOR_JOG_SPEED     2.0f    // rev/s, for the stop-setting nudges
 #define MOTOR_RETRY_SPEED   2.0f    // rev/s: a run to a stop that stalls backs off, then finishes at this speed
 #define MOTOR_MAX_SPEED     8.0f
+// End stops (travel.c): the blinds' physical stops at both ends, found by running into them until the Hall
+// count stops (a stall). Detect endstops (web page) finds both; after a power cut during a move the position
+// is unknown, and the next run first lowers into the bottom end stop to find it again.
+#define ENDSTOP_SPEED       2.0f    // rev/s, for detecting and re-homing
+#define ENDSTOP_MAX_COUNTS  240     // detecting gives up after this far in one direction (20 turns of the sprocket)
+#define HOME_EXTRA_COUNTS   24      // re-homing runs at most the end stops' distance apart plus this
 #define HALL_UP_SIGN      (1)

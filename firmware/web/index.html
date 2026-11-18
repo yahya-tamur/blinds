@@ -60,7 +60,8 @@
       <li>
         <span class="alarm-main"><span class="alarm-time"></span><span class="alarm-sub"></span></span>
         <span class="badge"></span>
-        <a class="remove" href="/" aria-label="Remove alarm">&times;</a>
+        <button type="button" class="skip" aria-pressed="false">Skip</button>
+        <a class="remove" href="/" aria-label="Delete alarm">&times;</a>
       </li>
     </template>
   </section>
@@ -106,6 +107,47 @@
         <button type="button" class="small" data-stop="bottom" data-act="clear">Clear</button></li>
     </ul>
     <p class="note">Nudges move at 2 rev/s.</p>
+  </details>
+  <details class="card fold" id="ends-card">
+    <summary><h2>Detect endstops</h2><span class="fold-info" id="ends-info"></span></summary>
+    <p class="note">Finds both end stops at 2 rev/s. After a power cut during a move, the next run re-homes on
+      the bottom one first.</p>
+    <p class="ends-warn" id="ends-warn" hidden></p>
+    <ul class="stops">
+      <li><span class="stop-name">Top</span><span class="stop-at" id="end-top">not detected</span></li>
+      <li><span class="stop-name">Bottom</span><span class="stop-at" id="end-bottom">not detected</span></li>
+    </ul>
+    <p class="ends-status" id="ends-status"></p>
+    <div class="ends-actions">
+      <button type="button" class="small" id="ends-detect">Detect endstops</button>
+      <button type="button" class="small" id="ends-home" title="Down into the bottom end stop, to find the position again">Re-home</button>
+      <button type="button" class="small stop" id="ends-stop" hidden>Stop</button>
+    </div>
+  </details>
+  <details class="card fold" id="remote-card">
+    <summary><h2>Set up remote</h2><span class="fold-info" id="remote-info"></span></summary>
+    <div id="remotes"></div>
+    <p class="empty" id="remotes-empty" hidden>No remote set up yet.</p>
+    <!-- Learn mode: waiting for a press (or a typed code), then for a new remote's first button, what it does -->
+    <div class="learn" id="learn" hidden>
+      <p class="learn-text" id="learn-text"></p>
+      <form class="learn-type" id="learn-type">
+        <input class="field" id="learn-code" autocomplete="off" spellcheck="false">
+        <button class="btn" type="submit">Add</button>
+      </form>
+      <p class="add-hint" id="learn-hint"></p>
+      <div class="learn-actions">
+        <span class="learn-choose" id="learn-choose" hidden>
+          <button type="button" class="small up" data-learn-do="up">Up</button>
+          <button type="button" class="small down" data-learn-do="down">Down</button>
+          <button type="button" class="small stop" data-learn-do="stop">Stop</button>
+        </span>
+        <button type="button" class="small" id="learn-cancel">Cancel</button>
+      </div>
+    </div>
+    <div class="remote-actions" id="remote-actions">
+      <button type="button" class="small" id="add-remote">Add remote</button>
+    </div>
   </details>
 
   <p class="footer"><span id="health"></span> &middot; <a href="/update">Firmware</a></p>
@@ -187,19 +229,28 @@ function phoneAlarm() {
 const localDate = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 
 // Rebuilds the list when the controller's alarms differ from what's shown. Soonest first, by the next
-// time the controller worked out; sun alarms without a location (no next time) go last.
-let shownAlarms = null;
-function showAlarms(alarms, max) {
+// time the controller worked out (a skipped time counts, so skipping doesn't move the alarm); sun alarms
+// without a location (no next time) go last.
+let shownAlarms = null, lastAlarms = null, lastMax = 0;
+// Delete takes two clicks: × turns into a Delete button in the same place, which works after a short pause
+// (so a double click doesn't delete) and turns back into × after a few seconds
+let deleting = null;   // { key: the alarm's fields as JSON, armedAt, timer }
+const DELETE_PAUSE_MS = 150, DELETE_KEEP_MS = 4000;
+const skipTime = a => a.skip_at ?? null;
+function showAlarms(alarms, max, force) {
+  lastAlarms = alarms;
+  lastMax = max;
   const phone = phoneAlarm();
   const key = JSON.stringify([alarms, today, phone]);
-  if (key === shownAlarms) {
+  if (key === shownAlarms && !force) {
     return;
   }
   shownAlarms = key;
   const list = document.getElementById("alarms");
   const row = document.getElementById("alarm-row").content;
   const items = phone ? [...alarms, { phone: true, next: phone.at }] : [...alarms];
-  const sorted = items.sort((a, b) => (a.next ?? Infinity) - (b.next ?? Infinity));
+  const order = a => skipTime(a) ?? a.next ?? Infinity;
+  const sorted = items.sort((a, b) => order(a) - order(b));
   list.replaceChildren(...sorted.map(a => {
     const li = row.firstElementChild.cloneNode(true);
     if (a.phone) {
@@ -212,6 +263,7 @@ function showAlarms(alarms, max) {
       badge.textContent = "phone";
       badge.classList.add("phone");
       li.querySelector(".remove").style.visibility = "hidden";   // keeps the badges lined up; removed in the clock app
+      li.querySelector(".skip").style.visibility = "hidden";
       li.onclick = () => window.BlindsApp.openClock();
       return li;
     }
@@ -227,14 +279,46 @@ function showAlarms(alarms, max) {
       time = when ? formatMinute(when.minute) : "–";
       sub = sunLabel(a.event, a.offset) + (!when ? " · set a location" : when.date !== today ? " · " + dayLabel(when.date) : "");
     }
+    // Skip: a recurring or sun alarm leaves out its next time once (one-time alarms are just removed)
+    const skipButton = li.querySelector(".skip");
+    if (a.kind === "once") {
+      skipButton.style.visibility = "hidden";
+    } else {
+      const skip = a.skip ? splitWhen(a.skip) : null;
+      if (skip) {
+        li.classList.add("skipped");
+        time = formatMinute(skip.minute);
+        const day = dayLabel(skip.date);
+        sub = "Skipping " + (day === "Today" || day === "Tomorrow" ? day.toLowerCase() : day);
+      }
+      skipButton.textContent = skip ? "Unskip" : "Skip";
+      skipButton.setAttribute("aria-pressed", !!skip);
+      skipButton.title = skip ? "Go off as usual next time" : "Skip the next time only";
+      skipButton.onclick = () => post("/api/alarms/skip", { ...alarmFields(a), skip: skip ? 0 : 1 });
+    }
     li.querySelector(".alarm-time").textContent = time;
     li.querySelector(".alarm-sub").textContent = sub;
     const badge = li.querySelector(".badge");
     badge.textContent = a.dir;
     badge.classList.add(a.dir);
-    li.querySelector(".remove").onclick = e => {
+    const remove = li.querySelector(".remove"), fields = alarmFields(a), fieldsKey = JSON.stringify(fields);
+    if (deleting && deleting.key === fieldsKey) {
+      remove.classList.add("confirm");
+      remove.textContent = "Delete";
+      remove.setAttribute("aria-label", "Delete this alarm");
+    }
+    remove.onclick = e => {
       e.preventDefault();
-      post("/api/alarms/remove", alarmFields(a));
+      if (!deleting || deleting.key !== fieldsKey) {
+        if (deleting) clearTimeout(deleting.timer);
+        deleting = { key: fieldsKey, armedAt: Date.now(),
+                     timer: setTimeout(() => { deleting = null; showAlarms(lastAlarms, lastMax, true); }, DELETE_KEEP_MS) };
+        showAlarms(lastAlarms, lastMax, true);
+      } else if (Date.now() - deleting.armedAt >= DELETE_PAUSE_MS) {
+        clearTimeout(deleting.timer);
+        deleting = null;
+        post("/api/alarms/remove", fields);
+      }
     };
     return li;
   }));
@@ -284,6 +368,31 @@ for (const b of document.querySelectorAll("[data-stop]")) {
   b.onclick = () => post("/api/stops/" + b.dataset.act, { w: b.dataset.stop });
 }
 
+// End stops: detected positions, and the detect / re-home moves (which the page stays on, like nudges)
+const TASKS = { detect_up: "Going up into the top end stop…", detect_down: "Going down into the bottom end stop…",
+  home: "Re-homing: going down into the bottom end stop…" };
+function showEnds(s) {
+  if (s.ends === undefined) return;
+  const e = s.ends, busy = !!s.task;
+  document.getElementById("end-top").textContent = e ? e.top : "not detected";
+  document.getElementById("end-bottom").textContent = e ? e.bottom : "not detected";
+  document.getElementById("ends-info").textContent = !s.pos_known ? "position unknown" : e ? `${e.top - e.bottom} counts apart` : "not detected";
+  const warn = document.getElementById("ends-warn");
+  warn.hidden = s.pos_known || busy;
+  warn.textContent = e ? "Position unknown: the controller restarted during a move. The next run re-homes first, or Re-home now."
+    : "Position unknown: the controller restarted during a move. Detect the end stops so it can find its place.";
+  document.getElementById("ends-status").textContent = busy ? `${TASKS[s.task]} Position ${s.pos}.` : s.task_result;
+  const moving = s.remaining_ms > 0 || busy;
+  document.getElementById("ends-detect").hidden = busy;
+  document.getElementById("ends-home").hidden = busy || !e;
+  document.getElementById("ends-detect").disabled = document.getElementById("ends-home").disabled = moving;
+  document.getElementById("ends-stop").hidden = !busy;
+  if (busy) document.getElementById("ends-card").open = true;
+}
+document.getElementById("ends-detect").onclick = () => post("/api/ends/detect", {});
+document.getElementById("ends-home").onclick = () => post("/api/ends/home", {});
+document.getElementById("ends-stop").onclick = () => post("/api/cancel", {});
+
 // One line of health numbers under the page: Wi-Fi signal, free memory, time since the last restart
 function showHealth(s) {
   if (!s) return;
@@ -304,7 +413,9 @@ async function check() {
     printLog(status);
     showStops(status);
     showSpeeds(status);
-    if (status.remaining_ms > 0 && !status.jog) {
+    showRemote(status.remote);
+    showEnds(status);
+    if (status.remaining_ms > 0 && !status.jog && !status.task) {
       location.replace("/moving");
       return;
     }
@@ -360,9 +471,13 @@ function fromNow(minutes) {
 }
 
 const addChanged = () => { hintError = ""; showAddHint(); };
+// Picking a sun event also picks the usual direction: up at dawn and sunrise, down at sunset and dusk
+const sunDirection = () => {
+  addForm.querySelector(`[name=d][value=${["dawn", "sunrise"].includes(eventSelect.value) ? "up" : "down"}]`).checked = true;
+};
 const eventSelect = makeDropdown(document.getElementById("event"),
   Object.entries({ dawn: "Dawn", sunrise: "Sunrise", sunset: "Sunset", dusk: "Dusk" }).map(([value, label]) => ({ value, label })),
-  "sunset", addChanged);
+  "sunset", () => { sunDirection(); addChanged(); });
 // Offsets every 5 minutes up to an hour either side, then every 15 up to 3 hours
 const offsetSelect = makeDropdown(document.getElementById("offset"),
   [...Array(25)].map((_, i) => (i - 12) * 5).concat([75, 90, 105, 120, 135, 150, 165, 180].flatMap(o => [-o, o]))
@@ -390,7 +505,11 @@ function showAddHint() {
   addHint.classList.toggle("error", !!hintError);
 }
 addForm.addEventListener("input", () => { hintError = ""; showAddHint(); });
-addForm.addEventListener("change", () => { hintError = ""; showAddHint(); });
+addForm.addEventListener("change", e => {
+  if (e.target.name === "k" && e.target.value === "sun") sunDirection();
+  hintError = "";
+  showAddHint();
+});
 
 addForm.onsubmit = async e => {
   e.preventDefault();
@@ -641,6 +760,262 @@ dials.forEach(k => k.render());
 function showSpeeds(s) {
   for (const k of dials) k.set(k.dir === "up" ? s.speed_up : s.speed_down);
 }
+
+// Remotes and their buttons. Remotes don't pair: each button is a remote's NEC address and a command code, set
+// up here by pressing it (or typing the code). Learn mode on the controller takes the next press from any remote
+// (without acting on it) and reports it in the status as capture {id, addr, cmd}; the id says which learn request
+// it answers. "Add remote" takes a press and asks what that button does, or a typed address; "+" on a row takes
+// another button of that remote for that row, or a typed command code. Remotes have names, "Remote 1" until renamed.
+const hex = n => "0x" + n.toString(16).toUpperCase().padStart(2, "0");
+const ACTIONS = { up: "Up", down: "Down", stop: "Stop" };
+const LEARN_GIVE_UP_MS = 60000;
+const learnBox = document.getElementById("learn"), learnText = document.getElementById("learn-text");
+const learnChoose = document.getElementById("learn-choose"), learnType = document.getElementById("learn-type");
+const learnCode = document.getElementById("learn-code"), learnHint = document.getElementById("learn-hint");
+const remoteCard = document.getElementById("remote-card"), remotesBox = document.getElementById("remotes");
+let learn = null;   // { addr (null = a new remote), action (null = ask), id, started, renew, captured, message }
+let lastRemote = null, shownRemote = null;
+let confirming = null;   // address of the remote whose Remove is asking to confirm
+
+const remoteName = addr => lastRemote?.remotes.find(r => r.addr === addr)?.name;
+const whichRemote = addr => remoteName(addr) ? `${remoteName(addr)} (${hex(addr)})` : `a remote not set up (address ${hex(addr)})`;
+
+function setLearnHint(text, error) {
+  learnHint.textContent = text || "";
+  learnHint.classList.toggle("error", !!error);
+}
+
+function showLearn() {
+  learnBox.hidden = !learn;
+  document.getElementById("remote-actions").hidden = !!learn;
+  if (!learn) return;
+  learnChoose.hidden = !learn.captured;
+  learnType.hidden = !!learn.captured;
+  const typing = learn.addr === null ? "type its address" : "type its code";
+  learnCode.placeholder = learn.addr === null ? "Address, e.g. 0x02" : "Command, e.g. 0x0C";
+  learnCode.setAttribute("aria-label", learn.addr === null ? "Remote address" : "Command code");
+  if (learn.captured) {
+    const c = learn.captured;
+    learnText.textContent = remoteName(c.addr)
+      ? `Button ${hex(c.cmd)} on ${remoteName(c.addr)}. What does it do?`
+      : `Button ${hex(c.cmd)} on a new remote (address ${hex(c.addr)}). What does it do?`;
+  } else if (learn.addr === null) {
+    learnText.textContent = (learn.message ? learn.message + " " : "") + `Press any button on the new remote, or ${typing}:`;
+  } else {
+    learnText.textContent = (learn.message ? learn.message + " " : "") +
+      `Press the ${ACTIONS[learn.action]} button on ${remoteName(learn.addr) ?? hex(learn.addr)}, or ${typing}:`;
+  }
+}
+
+async function learnRequest(on) {
+  try {
+    const r = await fetch("/api/remote/learn", { method: "POST", body: new URLSearchParams({ on: on ? 1 : 0 }) });
+    return r.ok ? (await r.json()).id : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Waits for a press; the controller's learn mode lasts 15 s, so it is renewed every 10 s until a press or 60 s.
+// Typing a code works all along, and after the 60 s too.
+async function startLearn(addr, action, message, keepTyped) {
+  stopLearn(false);
+  learn = { addr, action, id: null, started: Date.now(), captured: null, message };
+  if (!keepTyped) learnCode.value = "";
+  setLearnHint("");
+  showLearn();
+  if (!keepTyped) learnCode.focus({ preventScroll: true });
+  const mine = learn;
+  const id = await learnRequest(true);
+  if (learn !== mine) return;
+  if (id === null) {
+    setLearnHint("The controller didn't answer, so presses can't be taken now; typing still works.", true);
+    return;
+  }
+  learn.id = id;
+  learn.renew = setInterval(() => {
+    if (learn !== mine || learn.captured) return clearInterval(mine.renew);
+    if (Date.now() - mine.started > LEARN_GIVE_UP_MS) {
+      clearInterval(mine.renew);
+      learnRequest(false);
+      learn.id = null;
+      setLearnHint("No press seen for a minute, so the controller stopped listening. Type the code, or Cancel and try again.", true);
+      return;
+    }
+    learnRequest(true);
+  }, 10000);
+}
+
+function stopLearn(tell = true) {
+  if (!learn) return;
+  clearInterval(learn.renew);
+  if (tell && learn.id !== null && !learn.captured) learnRequest(false);
+  learn = null;
+  showLearn();
+}
+
+const parseCode = s => {
+  s = s.trim();
+  const n = /^0x[0-9a-f]{1,2}$/i.test(s) ? parseInt(s, 16) : /^\d{1,3}$/.test(s) ? Number(s) : NaN;
+  return n >= 0 && n <= 255 ? n : null;
+};
+
+function full(kind) {
+  if (!lastRemote) return "The controller didn't accept that.";
+  return kind === "remote" && lastRemote.remotes.length >= lastRemote.max_remotes
+    ? `The controller keeps up to ${lastRemote.max_remotes} remotes: remove one first.`
+    : lastRemote.buttons.length >= lastRemote.max
+    ? `The controller keeps up to ${lastRemote.max} buttons: remove one first.` : "The controller didn't accept that.";
+}
+
+// A typed address (new remote) or command code (a row's "+")
+learnType.onsubmit = async e => {
+  e.preventDefault();
+  if (!learn || learn.captured) return;
+  const n = parseCode(learnCode.value);
+  if (n === null) {
+    setLearnHint("Codes are 0 to 255: hex like 0x0C, or decimal.", true);
+    return;
+  }
+  const { addr, action } = learn;
+  if (addr === null) {
+    if (remoteName(n)) {
+      setLearnHint(`${whichRemote(n)} is already set up.`, true);
+      return;
+    }
+    stopLearn();
+    if (!await post("/api/remote/new", { a: n })) alert(full("remote"));
+    return;
+  }
+  const same = lastRemote?.buttons.find(b => b.addr === addr && b.cmd === n);
+  if (same && same.action === action) {
+    setLearnHint(`${hex(n)} is already a ${ACTIONS[action]} button.`, true);
+    return;
+  }
+  if (await post("/api/remote/add", { a: addr, c: n, do: action })) {
+    stopLearn();
+  } else {
+    setLearnHint(full("button"), true);
+  }
+};
+learnCode.addEventListener("input", () => setLearnHint(""));
+
+// A press arrived for the current learn request
+async function learned(cap) {
+  if (learn.addr !== null && cap.addr !== learn.addr) {
+    // Another remote: keep waiting for this one
+    const { addr, action } = learn;
+    startLearn(addr, action, `That was ${whichRemote(cap.addr)}.`, true);
+    return;
+  }
+  learn.captured = cap;
+  clearInterval(learn.renew);
+  if (learn.action === null) {
+    setLearnHint("");
+    showLearn();   // a new remote: ask what this button does
+    return;
+  }
+  const action = learn.action;
+  stopLearn(false);
+  if (!await post("/api/remote/add", { a: cap.addr, c: cap.cmd, do: action })) alert(full("button"));
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// Rebuilding the list would lose a name being typed or a Remove being confirmed: wait until done
+const remotesBusy = () => confirming !== null || remotesBox.contains(document.activeElement) && document.activeElement.tagName === "INPUT";
+
+function showRemote(r, force) {
+  if (!r) return;
+  lastRemote = r;
+  if (learn && learn.id !== null && !learn.captured && r.capture && r.capture.id === learn.id) learned(r.capture);
+  if (learn) showLearn();   // names may have changed
+  const key = JSON.stringify([r.remotes, r.buttons]);
+  if (!force && (key === shownRemote || remotesBusy())) return;
+  shownRemote = key;
+  const n = r.buttons.length;
+  document.getElementById("remote-info").textContent = !r.remotes.length ? "not set up" :
+    r.remotes.length === 1 ? `${r.remotes[0].name}, ${n} button${n === 1 ? "" : "s"}` : `${r.remotes.length} remotes`;
+  document.getElementById("remotes-empty").hidden = r.remotes.length > 0;
+  remotesBox.replaceChildren(...r.remotes.map(({ addr, name }) => {
+    const rows = { up: [], down: [], stop: [] };
+    for (const b of r.buttons) if (b.addr === addr) rows[b.action].push(b.cmd);
+    for (const a in rows) rows[a].sort((x, y) => x - y);
+    const box = el("div", "remote");
+    const head = el("div", "remote-head");
+    if (confirming === addr) {
+      head.append(el("span", "remote-confirm", `Remove ${name} and its buttons?`));
+      const yes = el("button", "small stop", "Remove"), no = el("button", "small", "Keep");
+      yes.type = no.type = "button";
+      yes.onclick = () => { confirming = null; post("/api/remote/delete", { a: addr }); };
+      no.onclick = () => { confirming = null; showRemote(lastRemote, true); };
+      head.append(yes, no);
+    } else {
+      const input = el("input", "remote-name");
+      input.value = name;
+      input.maxLength = 23;
+      input.setAttribute("aria-label", `Name of remote ${hex(addr)}`);
+      input.title = "Rename";
+      input.onkeydown = e => {
+        if (e.key === "Enter") input.blur();
+        if (e.key === "Escape") { input.value = name; input.blur(); }
+      };
+      input.onchange = () => {
+        const v = input.value.trim();
+        if (!v) input.value = name;
+        else if (v !== name) post("/api/remote/rename", { a: addr, name: v });
+      };
+      input.onblur = () => setTimeout(() => { if (!remotesBusy()) showRemote(lastRemote, true); });
+      const remove = el("button", "small", "Remove");
+      remove.type = "button";
+      remove.onclick = () => { confirming = addr; showRemote(lastRemote, true); };
+      head.append(input, el("span", "remote-addr", hex(addr)), remove);
+    }
+    box.append(head);
+    for (const action of Object.keys(ACTIONS)) {
+      const row = el("div", "remote-row");
+      row.append(el("span", `badge ${action}`, ACTIONS[action]));
+      const codes = el("span", "codes");
+      for (const c of rows[action]) {
+        const chip = el("span", "code", hex(c));
+        const x = el("button", "code-remove");
+        x.type = "button";
+        x.setAttribute("aria-label", `Remove ${ACTIONS[action]} button ${hex(c)}`);
+        x.innerHTML = "&times;";
+        x.onclick = () => post("/api/remote/remove", { a: addr, c });
+        chip.append(x);
+        codes.append(chip);
+      }
+      if (!rows[action].length) codes.append(el("span", "code-none", "none"));
+      const add = el("button", "small code-add", "+");
+      add.type = "button";
+      add.setAttribute("aria-label", `Add a ${ACTIONS[action]} button to ${name}`);
+      add.title = `Add a ${ACTIONS[action]} button`;
+      add.onclick = () => startLearn(addr, action);
+      row.append(codes, add);
+      box.append(row);
+    }
+    return box;
+  }));
+}
+
+document.getElementById("add-remote").onclick = () => startLearn(null, null);
+document.getElementById("learn-cancel").onclick = () => stopLearn();
+for (const b of learnChoose.querySelectorAll("[data-learn-do]")) {
+  b.onclick = async () => {
+    const cap = learn && learn.captured;
+    if (!cap) return;
+    stopLearn(false);
+    if (!await post("/api/remote/add", { a: cap.addr, c: cap.cmd, do: b.dataset.learnDo })) alert(full("button"));
+  };
+}
+remoteCard.addEventListener("toggle", () => { if (!remoteCard.open) stopLearn(); });
+window.addEventListener("pagehide", () => stopLearn());
 </script>
 </body>
 </html>

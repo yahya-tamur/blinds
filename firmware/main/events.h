@@ -3,7 +3,8 @@
 
 typedef enum { CMD_UP = 1, CMD_DOWN, CMD_CANCEL,
                CMD_JOG_UP, CMD_JOG_DOWN,          // arg = Hall counts (30 degrees of the sprocket each)
-               CMD_SET_STOP, CMD_CLEAR_STOP } command_t;   // arg = STOP_TOP or STOP_BOTTOM (travel.h)
+               CMD_SET_STOP, CMD_CLEAR_STOP,      // arg = STOP_TOP or STOP_BOTTOM (travel.h)
+               CMD_DETECT_ENDS, CMD_HOME } command_t;   // find both end stops / re-home on the bottom one
 typedef enum { SRC_SWITCH, SRC_REMOTE, SRC_WEB, SRC_ALARM } source_t;
 
 typedef struct {

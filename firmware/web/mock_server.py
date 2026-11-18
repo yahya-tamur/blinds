@@ -12,6 +12,11 @@ reload) and answers the same API as main/web.c, keeping alarms and the motor sta
   - the location is kept in memory; /locate.html serves ../../docs/locate.html for "Use my location"
   - what the board would log goes to the browser console via /api/status
   - /api/status has made-up health stats; /update accepts a file and pretends to restart
+  - remote buttons are kept in memory; there is no receiver, so POST /api/mock/press a=<address>&c=<command>
+    (mock only) stands for a press, e.g. curl -d a=0x02 -d c=0x0c http://127.0.0.1:8766/api/mock/press
+  - the blinds have physical end stops at positions MOCK_END_TOP / MOCK_END_BOTTOM; detecting and re-homing
+    move at MOCK_END_RATE counts/s (faster than the board, to keep tests short). POST /api/mock/powercut (mock
+    only) stands for a restart during a move: the position becomes unknown and the count drifts
 """
 
 import json
@@ -41,6 +46,8 @@ RUN_MS = 65500
 MAX_ALARMS = 20
 LOG_LINES = 32
 
+MOCK_END_TOP, MOCK_END_BOTTOM = 15, -90   # where the blinds' physical stops are, in the true position
+MOCK_END_RATE = 30                          # counts per second while detecting or re-homing
 lock = threading.Lock()
 alarms = []           # dicts like the board's alarm_t: {"kind", "dir" (1/-1), and "minute" | "at" | "event" + "offset"}
 location = None       # (lat, lon), one decimal
@@ -53,6 +60,18 @@ pos = 0               # Hall position (travel.c), counts of 30 degrees of the sp
 stops = {"top": None, "bottom": None}
 motor = {"irms": 1.7, "mode": "stealth"}
 speeds = {"up": 5.0, "down": 5.0}
+drift = 0             # counted position minus the true one (a power cut changes it)
+ends = None           # {"top", "bottom"} once detected
+pos_known = True
+task = None           # {"name": "detect_up"|"detect_down"|"home", "start": monotonic, "from": counted pos, "then": dir}
+task_result = ""
+found_top = None
+MAX_REMOTE_BUTTONS = 24
+MAX_REMOTES = 8
+remotes = []          # {"addr", "name"}, like remote.c
+LEARN_S = 15
+remote_buttons = []   # {"addr", "cmd", "action": "up"|"down"|"stop"}, like remote.c
+learn = {"id": 0, "until": None, "capture": None}   # until: time.monotonic() while learning
 
 
 def log(line):
@@ -61,6 +80,58 @@ def log(line):
     log_lines.append(line)
     del log_lines[:-LOG_LINES]
     log_next += 1
+
+
+def task_target(t):
+    """Counted position the task's move ends at (the physical stop), and how long it takes."""
+    true_end = MOCK_END_TOP if t["name"] == "detect_up" else MOCK_END_BOTTOM
+    end = true_end + drift
+    return end, abs(end - t["from"]) / MOCK_END_RATE
+
+
+def advance_task():
+    """Moves the task on: travel.c task_move_ended."""
+    global task, pos, ends, pos_known, drift, task_result, found_top
+    while task is not None:
+        end, secs = task_target(task)
+        elapsed = time.monotonic() - task["start"]
+        if elapsed < secs:
+            d = 1 if end > task["from"] else -1
+            pos = task["from"] + d * int(elapsed * MOCK_END_RATE)
+            return
+        pos = end
+        log(f"W travel: Stall: no Hall edge for 2.5 counts' worth of steps (position {pos}). Stopping.")
+        if task["name"] == "detect_up":
+            found_top = pos
+            log(f"I travel: Top end stop at {pos}; now down into the bottom one")
+            task = {"name": "detect_down", "start": time.monotonic(), "from": pos, "then": 0}
+        elif task["name"] == "detect_down":
+            d = -pos                     # renumber so the bottom end stop is 0 (travel.c shift_positions)
+            drift += d
+            ends = {"top": found_top + d, "bottom": 0}
+            pos = 0
+            pos_known = True
+            log(f"I travel: Position renumbered by {d:+d} so the bottom end stop is 0 (the stops keep their numbers)")
+            log(f"I travel: End stops saved: top {ends['top']}, bottom 0")
+            task_result = f"Found both: {ends['top']} counts apart."
+            task = None
+        else:
+            then = task["then"]
+            drift += ends["bottom"] - pos
+            pos = ends["bottom"]
+            pos_known = True
+            log(f"I travel: Re-homed: at the bottom end stop, position {pos}")
+            task_result = "Re-homed on the bottom end stop."
+            task = None
+            if then:
+                command("up" if then > 0 else "down", "re-homing")
+
+
+def start_task(name, then=0):
+    global task, task_result
+    task_result = ""
+    task = {"name": name, "start": time.monotonic(), "from": pos, "then": then}
+    log(f"I travel: {'Detecting end stops: up into the top one' if name == 'detect_up' else 'Re-homing: down into the bottom end stop'} at 2.0 rev/s")
 
 
 def remaining_ms():
@@ -72,14 +143,21 @@ def remaining_ms():
 
 def command(cmd, source):
     """The control task's rules: up/down start a run unless one is going, cancel ends it."""
-    global run
+    global run, task, task_result
     if cmd == "cancel":
-        if remaining_ms():
+        if task is not None:
+            log("I control: Cancelled by " + source)
+            task_result = "Stopped before reaching the end stop" + (": nothing saved." if task["name"] != "home" else ": position still unknown.")
+            task = None
+        elif remaining_ms():
             run = None
             log(f"I control: Cancelled by {source}")
-    elif not remaining_ms():
+    elif not remaining_ms() and task is None:
         global pos
         log(f"I control: {cmd.capitalize()} from {source}")
+        if not pos_known and ends is not None and source != "re-homing":
+            start_task("home", 1 if cmd == "up" else -1)
+            return
         stop = stops["top" if cmd == "up" else "bottom"]
         if stop is None:
             log(f"W travel: No {'top' if cmd == 'up' else 'bottom'} stop set: not running (set it under Adjust stops)")
@@ -89,6 +167,48 @@ def command(cmd, source):
             return
         pos = stop          # the mock "arrives" at once; the page still shows the run
         run = (1 if cmd == "up" else -1, time.monotonic())
+
+
+def code(v):
+    """A code from a POST body (web.c body_code): 0..255, decimal or 0x hex; None if not."""
+    try:
+        n = int(v, 0)
+    except ValueError:
+        return None
+    return n if 0 <= n <= 255 else None
+
+
+def new_remote(addr):
+    """remote.c new_remote_locked: the remote (added as "Remote N" if new), or None if full."""
+    r = next((r for r in remotes if r["addr"] == addr), None)
+    if r is None and len(remotes) < MAX_REMOTES:
+        names = {r["name"] for r in remotes}
+        k = 1
+        while f"Remote {k}" in names:
+            k += 1
+        r = {"addr": addr, "name": f"Remote {k}"}
+        remotes.append(r)
+        log(f"I remote: Added {r['name']} (address 0x{addr:02X})")
+    return r
+
+
+def learning():
+    if learn["until"] is not None and time.monotonic() >= learn["until"]:
+        learn["until"] = None
+    return learn["until"] is not None
+
+
+def remote_press(addr, cmd):
+    """What remote.c does with a decoded frame."""
+    if learning():
+        learn["until"] = None
+        learn["capture"] = {"id": learn["id"], "addr": addr, "cmd": cmd}
+        log(f"I remote: Address 0x{addr:02X} command 0x{cmd:02X} (learned)")
+        return
+    b = next((b for b in remote_buttons if b["addr"] == addr and b["cmd"] == cmd), None)
+    log(f"I remote: Address 0x{addr:02X} command 0x{cmd:02X}{'' if b else ' (not set up)'}")
+    if b:
+        command("cancel" if b["action"] == "stop" else b["action"], "remote")
 
 
 def sun_time(date, event):
@@ -186,13 +306,23 @@ def check_alarms():
                         else:
                             log(f"W alarms: Missed {describe(a)} (the board was off or didn't know the time): removed")
                         alarms.remove(a)
-                    elif a["kind"] == "recurring" and a["minute"] == now.hour * 60 + now.minute:
-                        recurring = a["dir"]
-                    elif a["kind"] == "sun":
-                        for days in (-1, 0, 1):
-                            t = sun_time(now.date() + timedelta(days=days), a["event"])
-                            if t is not None and (t + timedelta(minutes=a["offset"])).replace(second=0) == now:
-                                sun[a["event"]] = a["dir"]
+                    else:
+                        due = a["kind"] == "recurring" and a["minute"] == now.hour * 60 + now.minute
+                        if a["kind"] == "sun":
+                            for days in (-1, 0, 1):
+                                t = sun_time(now.date() + timedelta(days=days), a["event"])
+                                if t is not None and (t + timedelta(minutes=a["offset"])).replace(second=0) == now:
+                                    due = True
+                        skip = a.get("skip_at")
+                        if due and skip and skip.replace(second=0) == now:
+                            log(f"I alarms: Skipped {describe(a)} this once")
+                            a["skip_at"] = None
+                        elif due and a["kind"] == "recurring":
+                            recurring = a["dir"]
+                        elif due:
+                            sun[a["event"]] = a["dir"]
+                        elif skip and skip.replace(second=0) < now:
+                            a["skip_at"] = None
                 which, d = ("one-time", once) if once else ("recurring", recurring) if recurring else (None, 0)
                 for e in SUN_EVENTS:
                     if not d and e in sun:
@@ -206,7 +336,13 @@ def check_alarms():
 def alarm_json(a, now):
     j = {"kind": a["kind"], "dir": "up" if a["dir"] > 0 else "down"}
     j.update({k: a[k] for k in ("minute", "at", "event", "offset") if k in a})
+    skip = a.get("skip_at")
+    skip = skip if skip and skip > now else None
+    j["skip"] = skip.strftime("%Y-%m-%d %H:%M") if skip else None
+    j["skip_at"] = int(skip.timestamp()) if skip else None
     t = next_time(a, now)
+    if t and skip and t.replace(second=0) == skip.replace(second=0):   # alarms_next_run: the time after the skipped one
+        t = next_time(a, t)
     j["next"] = int(t.timestamp()) if t else None
     j["when"] = t.strftime("%Y-%m-%d %H:%M") if t else None
     return j
@@ -240,6 +376,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/api/status":
             since = int(parse_qs(url.query).get("since", ["0"])[0])
             with lock:
+                advance_task()
                 if since > log_next:
                     since = 0
                 now = datetime.now()
@@ -253,6 +390,8 @@ class Handler(BaseHTTPRequestHandler):
                     "pos": pos,
                     "stop_top": stops["top"],
                     "stop_bottom": stops["bottom"],
+                    "ends": ends, "pos_known": pos_known, "task": task["name"] if task else "",
+                    "task_result": task_result,
                     "irms": motor["irms"], "mode": motor["mode"],
                     "speed_up": speeds["up"], "speed_down": speeds["down"],
                     "driver": {"current": round(motor["irms"] / 1.7 * 30), "open_a": motor["irms"] > 1.2,
@@ -262,6 +401,9 @@ class Handler(BaseHTTPRequestHandler):
                     "sun": sun_json(now),
                     "max_alarms": MAX_ALARMS,
                     "alarms": [alarm_json(a, now) for a in alarms],
+                    "remote": {"max": MAX_REMOTE_BUTTONS, "max_remotes": MAX_REMOTES, "remotes": remotes,
+                               "buttons": remote_buttons, "learning": learning(),
+                               "capture": learn["capture"]},
                     "stats": {"uptime_s": int(time.monotonic() - STARTED), "heap": 212 * 1024,
                               "heap_min": 190 * 1024, "heap_largest": 110 * 1024, "rssi": -58,
                               "updating": False, "reset": "power on", "version": "mock, " + now.strftime("%b %d %Y")},
@@ -292,6 +434,8 @@ class Handler(BaseHTTPRequestHandler):
         d = {"up": 1, "down": -1}.get(field("d"), 0)
         ok = True
         with lock:
+            advance_task()
+            busy = task is not None or remaining_ms() > 0
             if self.path == "/api/move" and d:
                 command(field("d"), "web page")
             elif self.path == "/api/cancel":
@@ -340,6 +484,20 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         alarms.append(a)
                     log(f"I alarms: {'Replaced with' if same else 'Added'} {describe(a)}")
+            elif self.path == "/api/alarms/skip":
+                a = alarm_from(field)
+                same = next((b for b in alarms if a and same_slot(a, b) and b["dir"] == a["dir"] and
+                             (a["kind"] != "sun" or b["offset"] == a["offset"])), None)
+                ok = same is not None and same["kind"] != "once" and field("skip") in ("0", "1")
+                if ok and field("skip") == "1":
+                    t = next_time(same, datetime.now())
+                    ok = t is not None
+                    if ok:
+                        same["skip_at"] = t
+                        log(f"I alarms: {describe(same)} skips {t:%Y-%m-%d %H:%M} once")
+                elif ok:
+                    same["skip_at"] = None
+                    log(f"I alarms: {describe(same)} no longer skips")
             elif self.path == "/api/alarms/remove":
                 a = alarm_from(field)
                 same = next((b for b in alarms if a and same_slot(a, b) and b["dir"] == a["dir"] and
@@ -347,6 +505,73 @@ class Handler(BaseHTTPRequestHandler):
                 if same:
                     alarms.remove(same)
                     log(f"I alarms: Removed {describe(same)}")
+            elif self.path == "/api/remote/learn":
+                ok = field("on") in ("0", "1")
+                if ok:
+                    if field("on") == "1":
+                        if not learning():
+                            learn["id"] += 1
+                        learn["until"] = time.monotonic() + LEARN_S
+                    else:
+                        learn["until"] = None
+                    body = json.dumps({"id": learn["id"]}).encode()
+            elif self.path == "/api/remote/add":
+                a, c, act = code(field("a")), code(field("c")), field("do")
+                same = next((b for b in remote_buttons if b["addr"] == a and b["cmd"] == c), None)
+                ok = a is not None and c is not None and act in ("up", "down", "stop") and \
+                    (same is not None or (len(remote_buttons) < MAX_REMOTE_BUTTONS and new_remote(a) is not None))
+                if ok:
+                    if same:
+                        same["action"] = act
+                    else:
+                        remote_buttons.append({"addr": a, "cmd": c, "action": act})
+                    log(f"I remote: {'Changed' if same else 'Added'} address 0x{a:02X} command 0x{c:02X}: {act}")
+            elif self.path == "/api/remote/remove":
+                a, c = code(field("a")), code(field("c"))
+                ok = a is not None and c is not None
+                same = next((b for b in remote_buttons if b["addr"] == a and b["cmd"] == c), None)
+                if same:
+                    remote_buttons.remove(same)
+                    log(f"I remote: Removed address 0x{a:02X} command 0x{c:02X}")
+            elif self.path == "/api/remote/new":
+                a = code(field("a"))
+                ok = a is not None and new_remote(a) is not None
+            elif self.path == "/api/remote/rename":
+                a, name = code(field("a")), field("name").strip()
+                while len(name.encode()) > 23:
+                    name = name[:-1]
+                name = name.strip()
+                r = next((r for r in remotes if r["addr"] == a), None)
+                ok = r is not None and name != ""
+                if ok:
+                    log(f"I remote: Renamed {r['name']} to {name}")
+                    r["name"] = name
+            elif self.path == "/api/remote/delete":
+                a = code(field("a"))
+                ok = a is not None
+                if ok and any(r["addr"] == a for r in remotes):
+                    remotes[:] = [r for r in remotes if r["addr"] != a]
+                    remote_buttons[:] = [b for b in remote_buttons if b["addr"] != a]
+                    log(f"I remote: Removed the remote at address 0x{a:02X} and its buttons")
+            elif self.path == "/api/ends/detect":
+                if not busy:
+                    start_task("detect_up")
+            elif self.path == "/api/ends/home":
+                ok = ends is not None
+                if ok and not busy:
+                    start_task("home")
+            elif self.path == "/api/mock/powercut":
+                global drift, pos_known
+                drift += 7
+                pos += 7
+                pos_known = False
+                log("W travel: The board restarted during a move: position unknown. "
+                    + ("The next run re-homes on the bottom end stop first." if ends else "Detect the end stops so it can re-home (web page)."))
+            elif self.path == "/api/mock/press":
+                a, c = code(field("a")), code(field("c"))
+                ok = a is not None and c is not None
+                if ok:
+                    remote_press(a, c)
             elif self.path == "/api/location":
                 global location
                 if field("clear"):
@@ -363,7 +588,10 @@ class Handler(BaseHTTPRequestHandler):
                         log(f"I sun: Location set to {lat:.1f}, {lon:.1f}")
             else:
                 ok = False
-        self.send(204 if ok else 400)
+        if ok and self.path == "/api/remote/learn":
+            self.send(200, body, "application/json")
+        else:
+            self.send(204 if ok else 400)
 
     def log_message(self, *args):
         pass  # keep the terminal for the controller's own log lines

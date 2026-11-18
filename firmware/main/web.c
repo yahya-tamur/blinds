@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -7,6 +8,7 @@
 #include "alarms.h"
 #include "clock.h"
 #include "events.h"
+#include "inputs.h"
 #include "logbuf.h"
 #include "motor.h"
 #include "ota.h"
@@ -138,6 +140,11 @@ static esp_err_t api_status(httpd_req_t *req)
                    (unsigned long)(drv >> 16 & 0x1F), drv & (1u << 6) ? "true" : "false", drv & (1u << 7) ? "true" : "false",
                    drv & 0x3E ? "true" : "false");
     else out_printf(&o, ",\"driver\":null");
+    int etop, ebottom;
+    if (travel_get_ends(&etop, &ebottom)) out_printf(&o, ",\"ends\":{\"top\":%d,\"bottom\":%d}", etop, ebottom);
+    else out_printf(&o, ",\"ends\":null");
+    out_printf(&o, ",\"pos_known\":%s,\"task\":\"%s\",\"task_result\":", travel_pos_known() ? "true" : "false", travel_task());
+    out_json_string(&o, travel_task_result());
     int top, bottom;
     bool has_top = travel_get_stop(STOP_TOP, &top), has_bottom = travel_get_stop(STOP_BOTTOM, &bottom);
     if (has_top) out_printf(&o, ",\"stop_top\":%d", top);
@@ -178,6 +185,27 @@ static esp_err_t api_status(httpd_req_t *req)
         out_printf(&o, ",\"location\":null,\"sun\":null");
     }
 
+    // The remote's buttons, and learn mode: whether it is waiting, and the last press it took
+    remote_button_t rb[MAX_REMOTE_BUTTONS];
+    int nb = remote_list(rb);
+    remote_t rr[MAX_REMOTES];
+    int nr = remote_remotes(rr);
+    out_printf(&o, ",\"remote\":{\"max\":%d,\"max_remotes\":%d,\"remotes\":[", MAX_REMOTE_BUTTONS, MAX_REMOTES);
+    for (int i = 0; i < nr; i++) {
+        out_printf(&o, "%s{\"addr\":%d,\"name\":", i ? "," : "", rr[i].addr);
+        out_json_string(&o, rr[i].name);
+        out_write(&o, "}", 1);
+    }
+    out_printf(&o, "],\"buttons\":[");
+    for (int i = 0; i < nb; i++)
+        out_printf(&o, "%s{\"addr\":%d,\"cmd\":%d,\"action\":\"%s\"}", i ? "," : "", rb[i].addr, rb[i].cmd,
+                   rb[i].action > 0 ? "up" : rb[i].action < 0 ? "down" : "stop");
+    remote_capture_t cap;
+    bool learning = remote_learning(&cap);
+    out_printf(&o, "],\"learning\":%s,\"capture\":", learning ? "true" : "false");
+    if (cap.id) out_printf(&o, "{\"id\":%lu,\"addr\":%d,\"cmd\":%d}}", (unsigned long)cap.id, cap.addr, cap.cmd);
+    else out_printf(&o, "null}");
+
     alarm_t list[MAX_ALARMS];
     int n = alarms_list(list);
     out_printf(&o, ",\"max_alarms\":%d,\"alarms\":[", MAX_ALARMS);
@@ -187,8 +215,17 @@ static esp_err_t api_status(httpd_req_t *req)
         if (a->kind == ALARM_RECURRING) out_printf(&o, ",\"minute\":%d", a->minute);
         else if (a->kind == ALARM_ONCE) out_printf(&o, ",\"at\":%lld", (long long)a->at);
         else out_printf(&o, ",\"event\":\"%s\",\"offset\":%d", sun_name(a->event), a->minute);
+        if (known && a->skip_at > now) {
+            struct tm sk;
+            time_t t = (time_t)a->skip_at;
+            localtime_r(&t, &sk);
+            out_printf(&o, ",\"skip\":\"%04d-%02d-%02d %02d:%02d\",\"skip_at\":%lld", sk.tm_year + 1900, sk.tm_mon + 1,
+                       sk.tm_mday, sk.tm_hour, sk.tm_min, (long long)a->skip_at);
+        } else {
+            out_printf(&o, ",\"skip\":null,\"skip_at\":null");
+        }
         time_t next;
-        if (known && alarms_next(a, now, &next)) {
+        if (known && alarms_next_run(a, now, &next)) {
             struct tm nt;
             localtime_r(&next, &nt);
             out_printf(&o, ",\"next\":%lld,\"when\":\"%04d-%02d-%02d %02d:%02d\"}", (long long)next, nt.tm_year + 1900,
@@ -382,6 +419,16 @@ static esp_err_t api_alarm_add(httpd_req_t *req)
     return done(req, ok);
 }
 
+// The same fields as remove, plus skip=1 (skip its next time once) or skip=0 (don't)
+static esp_err_t api_alarm_skip(httpd_req_t *req)
+{
+    char body[112], v[4];
+    alarm_t a;
+    bool ok = read_body(req, body, sizeof body) && body_alarm(body, &a) &&
+              httpd_query_key_value(body, "skip", v, sizeof v) == ESP_OK && alarms_skip(&a, !strcmp(v, "1"));
+    return done(req, ok);
+}
+
 static esp_err_t api_alarm_remove(httpd_req_t *req)
 {
     char body[96];
@@ -406,6 +453,115 @@ static esp_err_t api_location(httpd_req_t *req)
     return done(req, ok);
 }
 
+static esp_err_t api_ends_detect(httpd_req_t *req)
+{
+    event_post(CMD_DETECT_ENDS, SRC_WEB);
+    return done(req, true);
+}
+
+static esp_err_t api_ends_home(httpd_req_t *req)
+{
+    int top;
+    bool ok = travel_get_ends(&top, NULL);
+    if (ok) event_post(CMD_HOME, SRC_WEB);
+    return done(req, ok);
+}
+
+// A code from the body: 0..255, decimal or 0x hex; -1 if missing or out of range
+static int body_code(const char *body, const char *key)
+{
+    char v[8], *end;
+    if (httpd_query_key_value(body, key, v, sizeof v) != ESP_OK || !v[0]) return -1;
+    long n = strtol(v, &end, 0);
+    return *end || n < 0 || n > 255 ? -1 : (int)n;
+}
+
+// on=1 starts (or renews) learn mode, on=0 ends it. Answers {"id":n}: the capture for this request carries it.
+static esp_err_t api_remote_learn(httpd_req_t *req)
+{
+    char body[16], v[4];
+    if (!read_body(req, body, sizeof body) || httpd_query_key_value(body, "on", v, sizeof v) != ESP_OK) return done(req, false);
+    char json[24];
+    snprintf(json, sizeof json, "{\"id\":%lu}", (unsigned long)remote_learn(!strcmp(v, "1")));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_sendstr(req, json);
+}
+
+// a=<address>&c=<command>&do=up|down|stop
+static esp_err_t api_remote_add(httpd_req_t *req)
+{
+    char body[48], v[8];
+    if (!read_body(req, body, sizeof body)) return done(req, false);
+    int a = body_code(body, "a"), c = body_code(body, "c");
+    int action = httpd_query_key_value(body, "do", v, sizeof v) != ESP_OK ? 2 :
+                 !strcmp(v, "up") ? 1 : !strcmp(v, "down") ? -1 : !strcmp(v, "stop") ? 0 : 2;
+    return done(req, a >= 0 && c >= 0 && action != 2 && remote_add(a, c, action));
+}
+
+// a=<address>&c=<command>
+static esp_err_t api_remote_remove(httpd_req_t *req)
+{
+    char body[32];
+    if (!read_body(req, body, sizeof body)) return done(req, false);
+    int a = body_code(body, "a"), c = body_code(body, "c");
+    if (a >= 0 && c >= 0) remote_remove(a, c);
+    return done(req, a >= 0 && c >= 0);
+}
+
+// a=<address>: a new remote, named "Remote N"
+static esp_err_t api_remote_new(httpd_req_t *req)
+{
+    char body[16];
+    int a = read_body(req, body, sizeof body) ? body_code(body, "a") : -1;
+    return done(req, a >= 0 && remote_new(a));
+}
+
+// Decodes a form value in place: + is a space, %XX a byte
+static void url_decode(char *s)
+{
+    char *out = s;
+    for (; *s; s++) {
+        if (*s == '+') *out++ = ' ';
+        else if (*s == '%' && isxdigit((unsigned char)s[1]) && isxdigit((unsigned char)s[2])) {
+            char hex[3] = { s[1], s[2], 0 };
+            *out++ = (char)strtol(hex, NULL, 16);
+            s += 2;
+        } else *out++ = *s;
+    }
+    *out = '\0';
+}
+
+// a=<address>&name=<new name> (UTF-8, cut to fit at a whole character; spaces at the ends dropped)
+static esp_err_t api_remote_rename(httpd_req_t *req)
+{
+    char body[160], name[120];
+    if (!read_body(req, body, sizeof body)) return done(req, false);
+    int a = body_code(body, "a");
+    if (a < 0 || httpd_query_key_value(body, "name", name, sizeof name) != ESP_OK) return done(req, false);
+    url_decode(name);
+    char *start = name;
+    while (*start == ' ') start++;
+    size_t n = strlen(start);
+    if (n > REMOTE_NAME_LENGTH - 1) {
+        n = REMOTE_NAME_LENGTH - 1;
+        while (n && ((unsigned char)start[n] & 0xC0) == 0x80) n--;   // not inside a UTF-8 character
+    }
+    while (n && start[n - 1] == ' ') n--;
+    start[n] = '\0';
+    for (char *c = start; *c; c++) if ((unsigned char)*c < 0x20) *c = ' ';
+    return done(req, remote_rename(a, start));
+}
+
+// a=<address>: the remote and all its buttons
+static esp_err_t api_remote_delete(httpd_req_t *req)
+{
+    char body[16];
+    int a = read_body(req, body, sizeof body) ? body_code(body, "a") : -1;
+    if (a >= 0) remote_delete(a);
+    return done(req, a >= 0);
+}
+
 static httpd_handle_t server;
 
 httpd_handle_t web_server(void) { return server; }
@@ -413,7 +569,7 @@ httpd_handle_t web_server(void) { return server; }
 void web_start(void)
 {
     httpd_config_t cfg = HTTPD_DEFAULT_CONFIG();
-    cfg.max_uri_handlers = 24;
+    cfg.max_uri_handlers = 36;
     cfg.stack_size = 6144;         // the update handler needs more than the default 4 KB
     cfg.lru_purge_enable = true;   // a phone that keeps connections open can't lock others out
     if (httpd_start(&server, &cfg) != ESP_OK) {
@@ -430,12 +586,21 @@ void web_start(void)
         { .uri = "/api/cancel", .method = HTTP_POST, .handler = api_cancel },
         { .uri = "/api/alarms/add", .method = HTTP_POST, .handler = api_alarm_add },
         { .uri = "/api/alarms/remove", .method = HTTP_POST, .handler = api_alarm_remove },
+        { .uri = "/api/alarms/skip", .method = HTTP_POST, .handler = api_alarm_skip },
         { .uri = "/api/location", .method = HTTP_POST, .handler = api_location },
         { .uri = "/api/jog", .method = HTTP_POST, .handler = api_jog },
         { .uri = "/api/motor/settings", .method = HTTP_POST, .handler = api_motor_settings },
         { .uri = "/api/speed", .method = HTTP_POST, .handler = api_speed },
         { .uri = "/api/stops/set", .method = HTTP_POST, .handler = api_stop_set },
         { .uri = "/api/stops/clear", .method = HTTP_POST, .handler = api_stop_clear },
+        { .uri = "/api/ends/detect", .method = HTTP_POST, .handler = api_ends_detect },
+        { .uri = "/api/ends/home", .method = HTTP_POST, .handler = api_ends_home },
+        { .uri = "/api/remote/learn", .method = HTTP_POST, .handler = api_remote_learn },
+        { .uri = "/api/remote/add", .method = HTTP_POST, .handler = api_remote_add },
+        { .uri = "/api/remote/remove", .method = HTTP_POST, .handler = api_remote_remove },
+        { .uri = "/api/remote/new", .method = HTTP_POST, .handler = api_remote_new },
+        { .uri = "/api/remote/rename", .method = HTTP_POST, .handler = api_remote_rename },
+        { .uri = "/api/remote/delete", .method = HTTP_POST, .handler = api_remote_delete },
     };
     for (size_t i = 0; i < sizeof api / sizeof api[0]; i++) httpd_register_uri_handler(server, &api[i]);
     ota_register(server);

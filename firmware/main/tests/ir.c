@@ -49,9 +49,8 @@ static bool decode_nec(const rmt_symbol_word_t *s, size_t n)
     }
     uint8_t addr = data, naddr = data >> 8, cmd = data >> 16, ncmd = data >> 24;
     bool ok = (uint8_t)~cmd == ncmd;
-    const char *role = cmd == IR_CMD_UP ? "  = up" : cmd == IR_CMD_DOWN ? "  = down" : cmd == IR_CMD_CANCEL ? "  = cancel" : "";
-    printf("NEC address 0x%02X%s  command 0x%02X%s%s\n", addr, (uint8_t)~addr == naddr ? "" : " (extended)",
-           cmd, ok ? "" : " (check failed)", ok ? role : "");
+    printf("NEC address 0x%02X%s  command 0x%02X%s\n", addr, (uint8_t)~addr == naddr ? "" : " (extended)",
+           cmd, ok ? "" : " (check failed)");
     return ok;
 }
 

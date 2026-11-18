@@ -56,6 +56,12 @@ static void handle(event_t ev)
         else travel_clear_stop(ev.arg);
         return;
     }
+    if (ev.cmd == CMD_DETECT_ENDS || ev.cmd == CMD_HOME) {
+        if (motor_running()) return;
+        if (ev.cmd == CMD_DETECT_ENDS) travel_detect_ends();
+        else travel_home();
+        return;
+    }
     if (ev.cmd == CMD_JOG_UP || ev.cmd == CMD_JOG_DOWN) {
         if (!motor_running()) travel_jog(ev.cmd == CMD_JOG_UP ? 1 : -1, ev.arg);
         return;

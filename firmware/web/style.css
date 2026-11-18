@@ -349,3 +349,58 @@ progress { width: 100%; height: 8px; margin-bottom: 12px; accent-color: var(--ac
   .toggle span { padding: 0 7px; font-size: 15px; }
   .add .btn { padding: 0 10px; font-size: 16px; }
 }
+
+/* Remote card: each remote's buttons in Up / Down / Stop rows, codes as removable chips */
+.badge.stop, .small.stop { background: var(--danger); color: #fff; }
+.small.up { background: var(--up); color: var(--on-up); }
+.small.down { background: var(--down); color: var(--on-down); }
+.toggle .stop input:checked + span { background: var(--danger); color: #fff; }
+.remote { border-top: 1px solid var(--line); padding: 8px 0; }
+.remote:first-child { border-top: 0; padding-top: 0; }
+.remote-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.remote-name { flex: 1; min-width: 0; height: 34px; padding: 0 8px; margin-left: -8px; border: 1px solid transparent;
+  border-radius: 8px; background: none; color: var(--text); font: inherit; font-weight: 600; }
+.remote-name:hover { border-color: var(--line); }
+.remote-name:focus { border-color: var(--accent); outline: none; background: var(--bg); }
+.remote-addr { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
+.remote-confirm { flex: 1; min-width: 0; font-size: 14px; }
+.remote-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
+.remote-row .badge { width: 60px; text-align: center; flex: none; }
+.codes { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.code { display: inline-flex; align-items: center; gap: 2px; height: 30px; padding: 0 2px 0 10px; border-radius: 8px;
+  background: var(--bg); font-variant-numeric: tabular-nums; font-size: 14px; }
+.code-remove { width: 26px; height: 26px; padding: 0; border: 0; background: none; color: var(--danger); font-size: 20px;
+  line-height: 1; cursor: pointer; }
+.code-none { color: var(--muted); font-size: 14px; line-height: 30px; }
+.code-add { width: 34px; padding: 0; font-size: 18px; flex: none; }
+.learn { border-top: 1px solid var(--line); padding: 10px 0 4px; }
+.learn-text { margin: 0 0 10px; }
+.learn-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.learn-choose { display: flex; gap: 8px; }
+.learn-choose .small { min-width: 64px; }
+.remote-actions { display: flex; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+#remotes-empty { margin-bottom: 12px; }
+.learn-type { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 4px; }
+.learn-type .btn { height: 46px; padding: 0 14px; font-size: 16px; background: var(--neutral); color: var(--text); }
+
+/* End stops card */
+.ends-warn { margin: 0 0 12px; color: var(--up); font-size: 14px; line-height: 1.4; }
+.ends-status { margin: 10px 0; min-height: 1.4em; color: var(--muted); font-size: 14px; }
+.ends-status:empty { display: none; }
+.ends-actions { display: flex; gap: 8px; margin-top: 10px; }
+.ends-actions .small:disabled { opacity: .4; cursor: default; }
+
+/* Skipping an alarm's next time */
+.skip { height: 30px; padding: 0 10px; border: 0; border-radius: 8px; background: var(--neutral); color: var(--text);
+  font: inherit; font-size: 13px; cursor: pointer; }
+.skip[aria-pressed="true"] { background: none; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
+.alarms li.skipped .alarm-time { color: var(--muted); text-decoration: line-through; }
+.alarms li.skipped .badge { opacity: .45; }
+/* The second click of a delete, in the ×'s place */
+.remove.confirm { padding: 6px 10px; background: var(--danger); color: #fff; font-size: 13px; font-weight: 600; }
+.alarm-time { white-space: nowrap; }
+@media (max-width: 360px) {
+  .alarms li { gap: 8px; }
+  .alarm-time { font-size: 21px; }
+  .skip { padding: 0 8px; }
+}

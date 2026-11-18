@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -55,6 +56,16 @@ static int run_to;                  // 1 / -1 while a run to a stop is going (0 
 static bool retried, stalled;       // this run has already retried / just stalled
 static bool jogging;                // the current move is a jog
 static int driver_resets;           // during the current move
+// End stops
+typedef enum { TASK_NONE, TASK_DETECT_UP, TASK_DETECT_DOWN, TASK_HOME } task_t;
+static task_t task;
+static bool ends_set;
+static int ends[2];                 // [STOP_TOP], [STOP_BOTTOM]
+static int found_top;               // while detecting: where the top end stop was
+static int home_then;               // the run (1 / -1) to start once re-homed, or 0
+static bool pos_known = true;       // false after a restart during a move, until re-homed
+static bool pos_ok_saved = true;    // what NVS "pos_ok" says
+static char task_result[96];
 
 static int count_now(void)
 {
@@ -77,6 +88,25 @@ static void save(const char *key, int value, bool set)
     nvs_close(h);
 }
 
+// Renumbers the position and the end stops by d counts so the bottom end stop is 0. The top and bottom stops
+// keep their numbers: they are counted from the bottom end stop, so they stay right after the position is lost
+// and found again by detecting.
+static void shift_positions(int d)
+{
+    if (!d) return;
+    offset += d;
+    saved_pos += d;
+    last_pos += d;
+    save("pos", saved_pos, true);
+    if (ends_set) {
+        for (int w = STOP_TOP; w <= STOP_BOTTOM; w++) {
+            ends[w] += d;
+            save(w == STOP_TOP ? "end_top" : "end_bottom", ends[w], true);
+        }
+    }
+    ESP_LOGI(TAG, "Position renumbered by %+d so the bottom end stop is 0 (the stops keep their numbers)", d);
+}
+
 void travel_init(void)
 {
     counter = hall_counter_init();
@@ -88,12 +118,39 @@ void travel_init(void)
         if (nvs_get_i32(h, "stop_bottom", &v) == ESP_OK) { stops[STOP_BOTTOM] = v; stop_set[STOP_BOTTOM] = true; }
         if (nvs_get_i32(h, "spd_up", &v) == ESP_OK && v >= 1 && v <= 80) speeds[STOP_TOP] = v / 10.0f;
         if (nvs_get_i32(h, "spd_down", &v) == ESP_OK && v >= 1 && v <= 80) speeds[STOP_BOTTOM] = v / 10.0f;
+        if (nvs_get_i32(h, "end_top", &v) == ESP_OK) {
+            ends[STOP_TOP] = v;
+            if (nvs_get_i32(h, "end_bottom", &v) == ESP_OK) { ends[STOP_BOTTOM] = v; ends_set = true; }
+        }
+        // 0 while a move is going or the blinds haven't been still for long since (no key: older firmware, trusted)
+        if (nvs_get_i32(h, "pos_ok", &v) == ESP_OK && v == 0) pos_known = pos_ok_saved = false;
         nvs_close(h);
     }
     saved_pos = last_pos = offset;
+    if (ends_set) shift_positions(-ends[STOP_BOTTOM]);   // end stops saved before they were numbered from 0
     ESP_LOGI(TAG, "Position %d (saved), top stop %s, bottom stop %s", offset,
              stop_set[STOP_TOP] ? "set" : "not set", stop_set[STOP_BOTTOM] ? "set" : "not set");
+    if (ends_set) ESP_LOGI(TAG, "End stops at %d (top) and %d (bottom)", ends[STOP_TOP], ends[STOP_BOTTOM]);
+    if (!pos_known)
+        ESP_LOGW(TAG, "The board restarted during a move: position unknown. %s", ends_set
+                 ? "The next run re-homes on the bottom end stop first." : "Detect the end stops so it can re-home (web page).");
 }
+
+bool travel_get_ends(int *top, int *bottom)
+{
+    if (top) *top = ends[STOP_TOP];
+    if (bottom) *bottom = ends[STOP_BOTTOM];
+    return ends_set;
+}
+
+bool travel_pos_known(void) { return pos_known; }
+
+const char *travel_task(void)
+{
+    return task == TASK_DETECT_UP ? "detect_up" : task == TASK_DETECT_DOWN ? "detect_down" : task == TASK_HOME ? "home" : "";
+}
+
+const char *travel_task_result(void) { return task_result; }
 
 float travel_speed(int dir) { return speeds[dir > 0 ? STOP_TOP : STOP_BOTTOM]; }
 
@@ -152,15 +209,115 @@ static void start(int dir, uint32_t steps, bool backoff, float speed, bool targe
     status_logged = false;
     move_started = gstat_checked = xTaskGetTickCount();
     driver_resets = 0;
+    if (pos_ok_saved) {                    // a restart from here until the blinds are still again loses the position
+        save("pos_ok", 0, true);
+        pos_ok_saved = false;
+    }
     motor_move(dir, steps, backoff, speed);
     if (!motor_running()) move_dir = 0;    // didn't start (no driver)
+}
+
+// Runs into an end stop at ENDSTOP_SPEED: the stall check ends the move there
+static void run_into_end(int dir, int max_counts)
+{
+    start(dir, (uint32_t)(max_counts * STEPS_PER_COUNT), false, ENDSTOP_SPEED, false, 0);
+}
+
+static void end_task(const char *fmt, int a, int b)
+{
+    snprintf(task_result, sizeof task_result, fmt, a, b);
+    task = TASK_NONE;
+}
+
+void travel_home(void)
+{
+    if (motor_running()) return;
+    if (!ends_set) {
+        ESP_LOGW(TAG, "Can't re-home: the end stops haven't been detected");
+        return;
+    }
+    ESP_LOGI(TAG, "Re-homing: down into the bottom end stop at %.1f rev/s", ENDSTOP_SPEED);
+    task = TASK_HOME;
+    task_result[0] = '\0';
+    run_into_end(-1, ends[STOP_TOP] - ends[STOP_BOTTOM] + HOME_EXTRA_COUNTS);
+    if (!move_dir) end_task("Re-homing didn't start (no reply from the driver).", 0, 0);
+}
+
+void travel_detect_ends(void)
+{
+    if (motor_running()) return;
+    ESP_LOGI(TAG, "Detecting end stops: up into the top one at %.1f rev/s", ENDSTOP_SPEED);
+    home_then = 0;
+    task = TASK_DETECT_UP;
+    task_result[0] = '\0';
+    run_into_end(1, ENDSTOP_MAX_COUNTS);
+    if (!move_dir) end_task("Detecting didn't start (no reply from the driver).", 0, 0);
 }
 
 void travel_run(int dir)
 {
     retried = false;                       // a new run from a command (the retry calls run_to_stop directly)
     run_to = 0;
+    if (!pos_known && ends_set) {          // first find the position again, then this run
+        home_then = dir;
+        travel_home();
+        return;
+    }
+    if (!pos_known) ESP_LOGW(TAG, "Position may be wrong (restart during a move): running anyway. Detect the end stops to re-home.");
     run_to_stop(dir);
+}
+
+// A detect or re-home move has ended at pos; stall = it ran into something
+static void task_move_ended(int pos, bool stall)
+{
+    if (task == TASK_DETECT_UP) {
+        if (!stall) {
+            ESP_LOGW(TAG, "Detecting end stops: no top end stop within %d counts (or stopped)", ENDSTOP_MAX_COUNTS);
+            end_task("Stopped before reaching the top end stop: nothing saved.", 0, 0);
+            return;
+        }
+        found_top = pos;
+        ESP_LOGI(TAG, "Top end stop at %d; now down into the bottom one", pos);
+        task = TASK_DETECT_DOWN;
+        run_into_end(-1, ENDSTOP_MAX_COUNTS);
+        if (!move_dir) end_task("Stopped at the top end stop: the move down didn't start. Nothing saved.", 0, 0);
+    } else if (task == TASK_DETECT_DOWN) {
+        if (!stall) {
+            ESP_LOGW(TAG, "Detecting end stops: no bottom end stop within %d counts (or stopped)", ENDSTOP_MAX_COUNTS);
+            end_task("Stopped before reaching the bottom end stop: nothing saved.", 0, 0);
+            return;
+        }
+        if (found_top - pos < 3) {
+            ESP_LOGW(TAG, "End stops only %d counts apart: not saved (stalled on the way?)", found_top - pos);
+            end_task("The end stops came out only %d counts apart, so they weren't saved. Try again.", found_top - pos, 0);
+            return;
+        }
+        ends[STOP_TOP] = found_top;
+        ends[STOP_BOTTOM] = pos;
+        ends_set = true;
+        shift_positions(-pos);          // the bottom end stop is 0, everything else counts up from it
+        save("end_top", ends[STOP_TOP], true);
+        save("end_bottom", ends[STOP_BOTTOM], true);
+        pos_known = true;
+        ESP_LOGI(TAG, "End stops saved: top %d, bottom %d", ends[STOP_TOP], ends[STOP_BOTTOM]);
+        end_task("Found both: %d counts apart.", found_top - pos, 0);
+    } else if (task == TASK_HOME) {
+        int dir = home_then;
+        home_then = 0;
+        if (!stall) {
+            ESP_LOGW(TAG, "Re-homing stopped before the bottom end stop: position still unknown");
+            end_task("Stopped before reaching the bottom end stop: position still unknown.", 0, 0);
+            return;
+        }
+        offset += ends[STOP_BOTTOM] - pos;         // here is the bottom end stop
+        pos_known = true;
+        ESP_LOGI(TAG, "Re-homed: at the bottom end stop, position %d (was counting %d)", travel_pos(), pos);
+        end_task("Re-homed on the bottom end stop.", 0, 0);
+        if (dir) {
+            retried = false;
+            run_to_stop(dir);
+        }
+    }
 }
 
 static void run_to_stop(int dir)
@@ -207,9 +364,15 @@ void travel_poll(void)
     int pos = travel_pos();
     TickType_t now = xTaskGetTickCount();
     if (pos != last_pos || motor_running()) { last_pos = pos; changed_at = now; }
-    if (pos != saved_pos && now - changed_at > pdMS_TO_TICKS(SAVE_AFTER_MS)) {   // still for a while: save it
-        save("pos", pos, true);
-        saved_pos = pos;
+    if (now - changed_at > pdMS_TO_TICKS(SAVE_AFTER_MS) && !motor_running()) {   // still for a while: save it
+        if (pos != saved_pos) {
+            save("pos", pos, true);
+            saved_pos = pos;
+        }
+        if (pos_known && !pos_ok_saved) {
+            save("pos_ok", 1, true);
+            pos_ok_saved = true;
+        }
     }
 
     if (!move_dir) return;
@@ -218,6 +381,10 @@ void travel_poll(void)
         ESP_LOGI(TAG, "Move ended at position %d (%d Hall edges%s)", pos, edges,
                  driver_resets ? ", driver settings re-sent after a reset" : "");
         move_dir = 0;
+        if (task != TASK_NONE) {
+            task_move_ended(pos, stalled);
+            return;
+        }
         int dir = run_to;
         run_to = 0;
         if (dir && stalled && !retried) {          // stalled on the way to a stop: finish slowly, once
@@ -273,6 +440,7 @@ void travel_poll(void)
             ESP_LOGE(TAG, "The Hall count runs the wrong way: HALL_UP_SIGN in app_config.h is backwards. Stopping.");
             motor_cancel();
             move_dir = 0;
+            if (task != TASK_NONE) end_task("Stopped: the Hall count runs the wrong way (HALL_UP_SIGN).", 0, 0);
             return;
         }
     }
