@@ -1,0 +1,37 @@
+Designator,Qty,Value,Part,LCSC,Footprint,Side,Notes
+BT1,1,CR2032,BS-02-A1AJ010,C5239862,BatteryHolder_MYOUNG_BS-02-A1AJ010,,"Through-hole cup CR2032 holder, 22.1 mm round, 8.5 mm tall (front side)"
+C4,1,100uF 50V,EEE-FK1H101P,C178548,CP_Elec_8x10,,Motor bulk capacitor right at the VS/GND pins (front side: 10.5 mm tall)
+C5,1,100nF 50V,,C49678,C_0805_2012Metric,,
+"C6,C7,C13",3,100nF 16V,,C49678,C_0805_2012Metric,,
+C8,1,4.7uF 16V,,C1779,C_0805_2012Metric,,
+C14,1,10uF 50V,CL32B106KBJNNNE,C138687,C_1210_3225Metric,,
+C16,1,220uF 10V,FVH010ADA221M0654,C7469982,CP_Elec_6.3x5.4,,"Output capacitor, electrolytic 6.3 x 5.4 mm (the XL1509 wants some output ESR, so not all-ceramic)"
+D1,1,SMBJ24CA,SMBJ24CA,C83268,D_SMB,,"Bidirectional TVS, starts at ~26.7 V either way: clamps positive surges below the TMC2209's 29 V and the XL1509's 40 V, negative spikes before they reach Q1 (40 V), and rail spikes coming back through Q1 while it is on. A reversed 24 V adapter stays below its breakdown. Replaces v0.1.0's SMBJ33CA (D1) and SMBJ24A (D3). The adapter must stay below ~26 V"
+D2,1,15V,MMSZ5245B,C2126,D_SOD-123,,Clamps the MOSFET gate to -15V vs source
+"D4,D6",2,SS14,SS14,C2480,D_SMA,,Relay coil flyback diode; Stops USB 5V from the DevKit back-feeding the buck when only USB is plugged in
+D5,1,SS16,SS16,C2481,D_SMA,,"Buck catch diode, Schottky 60 V 1 A (above the 40 V rail clamp)"
+F1,1,3A fast,0453003.MR,C178991,Fuse_Littelfuse-NANO2-451_453,,"Littelfuse Nano2 SMD fuse, 3 A fast-acting, 125 V"
+J1,1,24V DC 5.5x2.5mm,DC-005-5A-2.5,C381115,BarrelJack_DC-005_2.5mm_Horizontal_EdgeMount,,"XKB DC-005 style jack for 5.5 x 2.5 mm plugs, 5 A, centre positive"
+J2,1,Motor,S4B-XH-A,C157925,JST_XH_S4B-XH-A_1x04_P2.50mm_Horizontal,,"Right-angle JST-XH, opening to the left. Coil A on pins 1-2, coil B on pins 3-4"
+K1,1,HFD2/024-M,HFD2/024-M,C18198081,Relay_DPDT_Hongfa_HFD2,,"Hongfa DPDT, single side stable, 24 V standard coil, contacts 3 A at 40 VDC (UL). Same pins as the Omron G5V-2 (1/16 coil, + on 1; 4/13 common, 6/11 NC unused, 8/9 NO), 20.2 x 10.2 x 10.6 mm. Breaks A1 and B1. Hongfa recommends 1.0 mm holes; the G5V-2 footprint has 0.7 mm, so widen them at layout"
+L1,1,68uH,FNR6045S680MT,C168091,L_Changjiang_FNR6045S,,"68 uH, 1.1 A, 6 x 6 x 4.5 mm shielded"
+Q1,1,DMP4015SK3,DMP4015SK3-13,C513222,TO-252-2,,"Reverse-polarity protection. P-channel, 40V, 11 mOhm, TO-252: G=1, D=tab/2 (input side), S=3 (+24V side)"
+Q2,1,2N7002,2N7002,C8545,SOT-23,,Relay coil driver
+R1,1,47k,,C17713,R_0805_2012Metric,,
+"R2,R11,R13,R16",4,10k,,C17414,R_0805_2012Metric,,
+R4,1,100R,,C17408,R_0805_2012Metric,,
+"R3,R14",2,1k,,C17513,R_0805_2012Metric,,
+R15,1,3.3k,,C26010,R_0805_2012Metric,,
+"R17,R18",2,4.7k,,C17673,R_0805_2012Metric,,
+S1,1,MTS123 (ON)-OFF-(ON),CAX-MTS123-D2-BKJL,C55072606,Switch_CAX_MTS123_D2,,"Momentary centre-off toggle, flips up/down, straight to GPIO13/14. No parts: the ESP32's internal pull-ups and the firmware's 30 ms settle time (SWITCH_SETTLE_MS) handle it, so switch_input.c must turn the pull-ups on"
+U2,1,XL1509-ADJE1,XL1509-ADJE1,C74192,SOIC-8_3.9x4.9mm_P1.27mm,,"XLSEMI 150 kHz 2 A buck, 4.5-40 V in. ON/OFF tied low = always on"
+U3,1,ESP32-S3-DevKitC-1-N16R8,ESP32-S3-DevKitC-1-N16R8,,ESP32-S3-DevKitC-1_Soldered,"front, module (own pins)",Soldered straight to the board on its own pins. Its 3V3 pin (~500 mA LDO) powers all 3.3 V logic. GPIO21 (pin 40) switches the motor relay
+U4,1,BTT TMC2209 V1.3,BIGTREETECH TMC2209 V1.3,,StepStick_BTT_TMC2209_Soldered,"front, module (own pins)",Soldered straight to the board on its own pins. MS1=MS2=GND -> UART address 0. CLK=GND -> internal clock. UART on RX (pin 4)
+U5,1,DS3231SN,DS3231SN#T&R,C9866,SOIC-16W_7.5x10.3mm_P1.27mm,,"Maxim TCXO RTC, +-2 ppm. 32KHZ and RST unused (RST has an internal pull-up). INT/SQW (GPIO10) uses the ESP32's internal pull-up"
+U6,1,TSOP38238,TSOP38238,C141632,IR_Receiver_3Pin_LyingFlat,,"Vishay 38 kHz IR receiver, 2.5-5.5 V. Pins OUT, GND, VS. Its output has a built-in ~30k pull-up (plus the ESP32's on GPIO12)"
+"U7,U8",2,SS460S,SS460S,C111925,TO-92S,,"Honeywell Hall latch, open collector, sensor A. Back side at the left edge, branded face towards the gear. Pins 1 Vs, 2 GND, 3 OUT. Straight-lead SS460S: 1.27 mm pitch, 0.38 mm leads widening to 0.56 mm max near the body; Honeywell asks for holes of at least 0.68 mm (TO-92S has 0.75 mm). The -T2 version has formed leads at 2.54 mm; Honeywell Hall latch, open collector, sensor B. Back side at the left edge, branded face towards the gear. Pins 1 Vs, 2 GND, 3 OUT. Straight-lead SS460S: 1.27 mm pitch, 0.38 mm leads widening to 0.56 mm max near the body; Honeywell asks for holes of at least 0.68 mm (TO-92S has 0.75 mm). The -T2 version has formed leads at 2.54 mm"
+U3,1,ESP32-S3-DevKitC-1 N16R8,on hand,,,front,Solder on its own male pins
+U4,1,BTT TMC2209 V1.3 StepStick,on hand,,,front,"Solder on its own pins, incl. INDEX/DIAG"
+U4 heatsink,1,"Heatsink 9 x 9 x 5 mm, thermal tape",Amazon B079FQ22LK,,,front,Keep it inside the pin rows
+BT1 cell,1,"CR2032 (or LIR2032, charged elsewhere)",,,,front,No charging circuit on the board
+H1-H3,3,M3 screw + standoff,,,,,Standoffs ~6 mm: the Hall sensors stand ~4.5 mm off the back

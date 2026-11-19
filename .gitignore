@@ -17,11 +17,14 @@ firmware/local/
 docs/soldering-guide/
 
 # pcb/: only the v0.2.0 KiCad project is tracked (enough to open the board and plot the Gerbers);
-# the generators, libraries, older boards and manufacturing output stay local
+# the generators, libraries, older boards and manufacturing output stay local, except the v0.2.0 BOM
 pcb/*
 !pcb/carrier.kicad_pro
 !pcb/carrier.kicad_sch
 !pcb/carrier.kicad_pcb
+!pcb/manufacturing/
+pcb/manufacturing/*
+!pcb/manufacturing/BOM.csv
 
 # enclosure/: the SS460S Hall sensor model (from pcb/generator/make_ss460s_stl.py) stays local for now
 enclosure/ss460s.stl
