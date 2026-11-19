@@ -30,8 +30,3 @@ U4,1,BTT TMC2209 V1.3,BIGTREETECH TMC2209 V1.3,,StepStick_BTT_TMC2209_Soldered,"
 U5,1,DS3231SN,DS3231SN#T&R,C9866,SOIC-16W_7.5x10.3mm_P1.27mm,,"Maxim TCXO RTC, +-2 ppm. 32KHZ and RST unused (RST has an internal pull-up). INT/SQW (GPIO10) uses the ESP32's internal pull-up"
 U6,1,TSOP38238,TSOP38238,C141632,IR_Receiver_3Pin_LyingFlat,,"Vishay 38 kHz IR receiver, 2.5-5.5 V. Pins OUT, GND, VS. Its output has a built-in ~30k pull-up (plus the ESP32's on GPIO12)"
 "U7,U8",2,SS460S,SS460S,C111925,TO-92S,,"Honeywell Hall latch, open collector, sensor A. Back side at the left edge, branded face towards the gear. Pins 1 Vs, 2 GND, 3 OUT. Straight-lead SS460S: 1.27 mm pitch, 0.38 mm leads widening to 0.56 mm max near the body; Honeywell asks for holes of at least 0.68 mm (TO-92S has 0.75 mm). The -T2 version has formed leads at 2.54 mm; Honeywell Hall latch, open collector, sensor B. Back side at the left edge, branded face towards the gear. Pins 1 Vs, 2 GND, 3 OUT. Straight-lead SS460S: 1.27 mm pitch, 0.38 mm leads widening to 0.56 mm max near the body; Honeywell asks for holes of at least 0.68 mm (TO-92S has 0.75 mm). The -T2 version has formed leads at 2.54 mm"
-U3,1,ESP32-S3-DevKitC-1 N16R8,on hand,,,front,Solder on its own male pins
-U4,1,BTT TMC2209 V1.3 StepStick,on hand,,,front,"Solder on its own pins, incl. INDEX/DIAG"
-U4 heatsink,1,"Heatsink 9 x 9 x 5 mm, thermal tape",Amazon B079FQ22LK,,,front,Keep it inside the pin rows
-BT1 cell,1,"CR2032 (or LIR2032, charged elsewhere)",,,,front,No charging circuit on the board
-H1-H3,3,M3 screw + standoff,,,,,Standoffs ~6 mm: the Hall sensors stand ~4.5 mm off the back
