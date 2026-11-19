@@ -20,6 +20,13 @@ static const char *TAG = "travel";
 #define OVERRUN_COUNTS   2      // the Hall count stops a move that gets this many counts past where it should end
 #define SAVE_AFTER_MS    5000   // save the position once it has been still this long
 #define LATE_EDGE        1.4f   // log an edge that took more than this many counts' worth of steps
+// Motor direction check. The Hall sensors sit on the blinds' sprocket, so the count always tells which way the
+// blinds really go, and the position, stops and end stops are on that scale whatever the motor wiring. If
+// the motor was rewired (a coil swapped), Up turns it down: a move whose count runs WRONG_WAY_COUNTS against
+// the command swaps the motor direction (saved) and starts again. A move that stalls before any Hall edge
+// may be the swapped motor pushing into an end stop: a short probe with the direction swapped tells.
+#define WRONG_WAY_COUNTS 2
+#define PROBE_COUNTS     4
 
 static pcnt_unit_handle_t counter;
 static int offset;              // position = HALL_UP_SIGN * count + offset
@@ -56,6 +63,13 @@ static int run_to;                  // 1 / -1 while a run to a stop is going (0 
 static bool retried, stalled;       // this run has already retried / just stalled
 static bool jogging;                // the current move is a jog
 static int driver_resets;           // during the current move
+static int start_count, best_net;   // count at the move's start; furthest it got the commanded way
+static bool restart_pending;        // the motor ran the wrong way: direction swapped, start this again once stopped
+static bool probing;                // the current move is the direction probe (motor direction swapped for it)
+static int probe_result;            // 1 = the swapped direction is right, -1 = it isn't, 0 = can't tell yet
+static bool probed;                 // the current run or task has had its probe
+static bool user_cancelled;         // stopped by a command: no probe, retry or restart after it
+static int jog_counts;
 // End stops
 typedef enum { TASK_NONE, TASK_DETECT_UP, TASK_DETECT_DOWN, TASK_HOME } task_t;
 static task_t task;
@@ -209,6 +223,9 @@ static void start(int dir, uint32_t steps, bool backoff, float speed, bool targe
     status_logged = false;
     move_started = gstat_checked = xTaskGetTickCount();
     driver_resets = 0;
+    start_count = last_count;
+    best_net = 0;
+    user_cancelled = false;
     if (pos_ok_saved) {                    // a restart from here until the blinds are still again loses the position
         save("pos_ok", 0, true);
         pos_ok_saved = false;
@@ -239,6 +256,7 @@ void travel_home(void)
     ESP_LOGI(TAG, "Re-homing: down into the bottom end stop at %.1f rev/s", ENDSTOP_SPEED);
     task = TASK_HOME;
     task_result[0] = '\0';
+    probed = false;
     run_into_end(-1, ends[STOP_TOP] - ends[STOP_BOTTOM] + HOME_EXTRA_COUNTS);
     if (!move_dir) end_task("Re-homing didn't start (no reply from the driver).", 0, 0);
 }
@@ -250,6 +268,7 @@ void travel_detect_ends(void)
     home_then = 0;
     task = TASK_DETECT_UP;
     task_result[0] = '\0';
+    probed = false;
     run_into_end(1, ENDSTOP_MAX_COUNTS);
     if (!move_dir) end_task("Detecting didn't start (no reply from the driver).", 0, 0);
 }
@@ -257,6 +276,7 @@ void travel_detect_ends(void)
 void travel_run(int dir)
 {
     retried = false;                       // a new run from a command (the retry calls run_to_stop directly)
+    probed = false;
     run_to = 0;
     if (!pos_known && ends_set) {          // first find the position again, then this run
         home_then = dir;
@@ -349,9 +369,95 @@ static void run_to_stop(int dir)
 void travel_jog(int dir, int counts)
 {
     if (counts < 1 || counts > 4 * HALL_COUNTS_PER_REV) return;
+    jog_counts = counts;
     start(dir, (uint32_t)(counts * STEPS_PER_COUNT), false, MOTOR_JOG_SPEED, true,
           travel_pos() + dir * (counts + OVERRUN_COUNTS));
     jogging = move_dir != 0;
+}
+
+void travel_cancel(void)
+{
+    if (!motor_running()) return;
+    user_cancelled = true;
+    motor_cancel();
+}
+
+// The move that just ended (dir) is to happen again: after the motor direction was swapped, or after a
+// probe that found the direction right (then a run finishes at the retry speed, as after any stall)
+static void redo_move(int dir, bool swapped)
+{
+    if (task == TASK_DETECT_UP || task == TASK_DETECT_DOWN) {
+        if (swapped) travel_detect_ends();          // what it found so far came from moves the wrong way
+        else run_into_end(dir, ENDSTOP_MAX_COUNTS);
+        if (!move_dir && task != TASK_NONE) end_task("Detecting stopped: the next move didn't start. Nothing saved.", 0, 0);
+    } else if (task == TASK_HOME) {
+        run_into_end(-1, ends[STOP_TOP] - ends[STOP_BOTTOM] + HOME_EXTRA_COUNTS);
+        if (!move_dir) end_task("Re-homing stopped: the next move didn't start. Position still unknown.", 0, 0);
+    } else if (jogging) {
+        travel_jog(dir, jog_counts);
+    } else if (run_to) {
+        int d = run_to;
+        run_to = 0;
+        if (!swapped) retried = true;
+        run_to_stop(d);
+    }
+}
+
+// What follows a move that has ended (stalled or not), as before the direction check
+static void after_move(int pos)
+{
+    if (task != TASK_NONE) {
+        task_move_ended(pos, stalled);
+        return;
+    }
+    int dir = run_to;
+    run_to = 0;
+    if (dir && stalled && !retried) {          // stalled on the way to a stop: finish slowly, once
+        retried = true;
+        ESP_LOGW(TAG, "Finishing the run at %.1f rev/s after the stall", MOTOR_RETRY_SPEED);
+        run_to_stop(dir);
+    } else if (dir && stalled) {
+        ESP_LOGE(TAG, "Stalled again on the slow retry: stopped at position %d", pos);
+    }
+}
+
+static void start_probe(int dir, int pos)
+{
+    probed = true;
+    motor_set_reversed(!motor_reversed(), false);
+    ESP_LOGW(TAG, "Stalled before the first Hall edge: trying %d counts with the motor direction swapped (rewired motor?)",
+             PROBE_COUNTS);
+    probing = true;
+    probe_result = 0;
+    start(dir, (uint32_t)(PROBE_COUNTS * STEPS_PER_COUNT), false, MOTOR_JOG_SPEED, false, 0);
+    if (!move_dir) {                           // didn't start: as if there had been no probe
+        probing = false;
+        motor_set_reversed(!motor_reversed(), false);
+        stalled = true;
+        after_move(pos);
+    }
+}
+
+static void probe_ended(int dir, int pos)
+{
+    probing = false;
+    if (probe_result > 0 && !user_cancelled) {
+        ESP_LOGW(TAG, "The motor turns the other way now (rewired): direction swapped and saved. The stops and end "
+                 "stops stay as they are (the Hall count follows the blinds).");
+        motor_set_reversed(motor_reversed(), true);
+        redo_move(dir, true);
+        return;
+    }
+    motor_set_reversed(!motor_reversed(), false);   // back to the direction it had
+    if (user_cancelled) { stalled = false; after_move(pos); return; }
+    if (probe_result < 0) {
+        ESP_LOGI(TAG, "The motor direction is right (the probe went the other way): carrying on");
+        redo_move(dir, false);
+        return;
+    }
+    ESP_LOGW(TAG, "The probe didn't move the blinds either way: treating it as a stall");
+    stalled = true;
+    after_move(pos);
 }
 
 bool travel_is_jog(void)
@@ -380,19 +486,18 @@ void travel_poll(void)
         check_gstat("at the end");
         ESP_LOGI(TAG, "Move ended at position %d (%d Hall edges%s)", pos, edges,
                  driver_resets ? ", driver settings re-sent after a reset" : "");
+        int dir = move_dir;
         move_dir = 0;
-        if (task != TASK_NONE) {
-            task_move_ended(pos, stalled);
-            return;
-        }
-        int dir = run_to;
-        run_to = 0;
-        if (dir && stalled && !retried) {          // stalled on the way to a stop: finish slowly, once
-            retried = true;
-            ESP_LOGW(TAG, "Finishing the run at %.1f rev/s after the stall", MOTOR_RETRY_SPEED);
-            run_to_stop(dir);
-        } else if (dir && stalled) {
-            ESP_LOGE(TAG, "Stalled again on the slow retry: stopped at position %d", pos);
+        if (probing) {
+            probe_ended(dir, pos);
+        } else if (restart_pending) {
+            restart_pending = false;
+            if (user_cancelled) after_move(pos);
+            else redo_move(dir, true);
+        } else if (stalled && edges == 0 && !probed && !user_cancelled && (task != TASK_NONE || run_to)) {
+            start_probe(dir, pos);
+        } else {
+            after_move(pos);
         }
         return;
     }
@@ -426,6 +531,22 @@ void travel_poll(void)
 
     int c = count_now();
     uint32_t steps = motor_steps_run();
+    int net = (c - start_count) * HALL_UP_SIGN * move_dir;   // counts gone the commanded way since the start
+    if (net > best_net) best_net = net;
+    if (probing) {
+        if (probe_result == 0 && (net >= WRONG_WAY_COUNTS || net <= -WRONG_WAY_COUNTS)) {
+            probe_result = net > 0 ? 1 : -1;
+            motor_cancel();
+        }
+    } else if (!restart_pending && net <= -WRONG_WAY_COUNTS && best_net < WRONG_WAY_COUNTS) {
+        ESP_LOGW(TAG, "The blinds went %d counts %s on %s: the motor turns the other way (rewired). Direction swapped "
+                 "and saved; the stops and end stops stay as they are (the Hall count follows the blinds).",
+                 -net, move_dir > 0 ? "down" : "up", move_dir > 0 ? "an up move" : "a down move");
+        motor_set_reversed(!motor_reversed(), true);
+        motor_cancel();
+        has_target = false;
+        restart_pending = true;
+    }
     if (c != last_count) {
         int moved = (c - last_count) * HALL_UP_SIGN * move_dir;   // positive when going the commanded way
         last_count = c;
@@ -435,13 +556,6 @@ void travel_poll(void)
                 ESP_LOGW(TAG, "Late edge at position %d: %.2f counts' worth of steps (slowing or slipping)", pos, gap);
             edges += moved;
             edge_steps = steps;
-        }
-        else if (moved < 0 && edges == 0 && steps > 3 * STEPS_PER_COUNT) {
-            ESP_LOGE(TAG, "The Hall count runs the wrong way: HALL_UP_SIGN in app_config.h is backwards. Stopping.");
-            motor_cancel();
-            move_dir = 0;
-            if (task != TASK_NONE) end_task("Stopped: the Hall count runs the wrong way (HALL_UP_SIGN).", 0, 0);
-            return;
         }
     }
     if (has_target && (move_dir > 0 ? pos >= target : pos <= target)) {

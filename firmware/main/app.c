@@ -72,7 +72,7 @@ static void handle(event_t ev)
     }
     if (ev.cmd == CMD_CANCEL) {
         if (motor_running()) {
-            motor_cancel();
+            travel_cancel();
             ESP_LOGI(TAG, "Cancelled by %s", source_name(ev.source));
         }
         return;
@@ -81,7 +81,7 @@ static void handle(event_t ev)
         // The switch the other way stops the run; the same way, or up or down from anything else
         // (as in the Arduino version), is ignored
         if (ev.source == SRC_SWITCH && (ev.cmd == CMD_UP ? 1 : -1) != motor_dir()) {
-            motor_cancel();
+            travel_cancel();
             ESP_LOGI(TAG, "Stopped by the switch");
         }
         return;

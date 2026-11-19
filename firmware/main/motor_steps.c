@@ -79,6 +79,7 @@ void motor_report_breadcrumb(void)
 // Runtime settings (RAM only, back to app_config.h at restart): for tests and measurements over Wi-Fi
 static float run_irms = MOTOR_IRMS;
 static bool run_spread = MOTOR_SPREADCYCLE;
+static bool reversed;              // DIR levels swapped from MOTOR_UP_DIR (motor rewired), saved as "mot_rev"
 
 static void build_ramp(float speed_rps, float accel_rps2);
 static float run_speed = MOTOR_REV_PER_S, run_accel = MOTOR_ACCEL;
@@ -91,9 +92,25 @@ static void load_settings(void)
     if (nvs_open("blinds", NVS_READONLY, &h) != ESP_OK) return;
     if (nvs_get_i32(h, "irms_ca", &v) == ESP_OK && v >= 20 && v <= lroundf(MOTOR_IRMS * 100)) run_irms = v / 100.0f;
     if (nvs_get_i32(h, "spread", &v) == ESP_OK && (v == 0 || v == 1)) run_spread = v;
+    if (nvs_get_i32(h, "mot_rev", &v) == ESP_OK) reversed = v == 1;
     nvs_close(h);
-    ESP_LOGI(TAG, "Settings: %.2f A, %s", run_irms, run_spread ? "SpreadCycle" : "StealthChop");
+    ESP_LOGI(TAG, "Settings: %.2f A, %s%s", run_irms, run_spread ? "SpreadCycle" : "StealthChop",
+             reversed ? ", direction reversed (motor rewired)" : "");
 }
+
+void motor_set_reversed(bool r, bool save)
+{
+    reversed = r;
+    if (!save) return;
+    nvs_handle_t h;
+    if (nvs_open("blinds", NVS_READWRITE, &h) == ESP_OK) {
+        if (nvs_set_i32(h, "mot_rev", r) != ESP_OK || nvs_commit(h) != ESP_OK) ESP_LOGE(TAG, "Couldn't save the motor direction");
+        nvs_close(h);
+    }
+    ESP_LOGW(TAG, "Motor direction saved: %s", r ? "reversed from MOTOR_UP_DIR" : "as MOTOR_UP_DIR says");
+}
+
+bool motor_reversed(void) { return reversed; }
 
 void motor_set(float irms, int spread)
 {
@@ -253,7 +270,8 @@ void motor_move(int d, uint32_t steps, bool backoff, float speed)
         tmc_write(TMC_GCONF, (1u << 2) | (1u << 6) | (1u << 7) | (1u << 8));   // tmc_setup's GCONF + en_SpreadCycle
     }
     gptimer_stop(timer);   // stopped already unless a run just ended; the error is harmless
-    int level = d > 0 ? MOTOR_UP_DIR : !MOTOR_UP_DIR;
+    int up = MOTOR_UP_DIR ^ reversed;
+    int level = d > 0 ? up : !up;
     gpio_set_level(PIN_DIR, level);
     back_level = !level;
     crumb_count++;

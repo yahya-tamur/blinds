@@ -19,6 +19,10 @@ float motor_speed(void);
 float motor_irms(void);
 bool motor_spreadcycle(void);
 void motor_cancel(void);          // ends the run early
+// The motor turns the other way from MOTOR_UP_DIR (it was rewired): travel.c notices from the Hall count and
+// sets this; saved in NVS ("mot_rev") when save is true. Takes effect from the next move.
+void motor_set_reversed(bool reversed, bool save);
+bool motor_reversed(void);
 bool motor_running(void);
 bool motor_finishing(void);       // slowing down to its stop, pausing or backing off: the run is ending anyway
 int motor_dir(void);              // 1, -1, or 0 at rest

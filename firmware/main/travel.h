@@ -9,7 +9,9 @@
 //
 // Up runs to the top stop and Down to the bottom stop, stopping when the Hall count gets there; without its
 // stop a run doesn't start (jogs still work, for setting the stops). Every move stops if the Hall count stops changing
-// (a stall). The plan for learned speeds, end-stop homing and retries is in the "Learned motor behaviour"
+// (a stall). If the count runs against the command, the motor was rewired: the motor direction is swapped
+// (saved) and the move starts again; a stall before any Hall edge first tries a short move with it swapped.
+// The stops and end stops don't change, since the count follows the blinds, not the motor. The plan for learned speeds, end-stop homing and retries is in the "Learned motor behaviour"
 // section of the Next Steps doc.
 #pragma once
 #include <stdbool.h>
@@ -29,6 +31,7 @@ float travel_speed(int dir);             // run speed, rev/s (saved per directio
 void travel_set_speed(int dir, float rps);   // 0.1 .. MOTOR_MAX_SPEED, in steps of 0.1
 void travel_jog(int dir, int counts);    // a short move without back-off, for setting the stops
 bool travel_is_jog(void);                 // the current move is a jog
+void travel_cancel(void);                 // stop the current move (a command): no retry or direction probe after it
 // End stops: the blinds' physical stops, found by running into them (a stall) at ENDSTOP_SPEED
 void travel_detect_ends(void);            // up into the top end stop, then down into the bottom one; saved
 void travel_home(void);                   // down into the bottom end stop: the position is known again
