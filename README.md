@@ -59,7 +59,7 @@ Additional items required
 
 firmware
 ------
-  * Copy `wifi.example.properties` into `wifi.properties` and aet the wifi SSID and password.
+  * Copy `wifi.example.properties` into `wifi.properties` and set the wifi SSID and password.
   * Build and flash in the `firmware/` folder using ESP-IDF v6.1. For the first flash, you need to connect to the devkit via USB, which isn't accessible when it's in the enclosure. Future firmware updates can be done over wifi.
   * In the WiFi interface (find the device's ip address on your router. `blinds.lan` may work for some routers):
     * Set up the beginning and the end of the movement.
